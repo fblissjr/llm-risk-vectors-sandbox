@@ -1,0 +1,1415 @@
+--- Page 1 ---
+Countermind: A Multi-Layered Security Architecture for
+Large Language Models
+DominikSchwarz
+IndependentResearcher
+dominikschwarz@acm.org
+October15,2025
+Abstract
+ThesecurityofLargeLanguageModel(LLM)applicationsisfundamentallychallengedby“form-
+first”attackslikepromptinjectionandjailbreaking,wheremaliciousinstructionsareembeddedwithin
+userinputs. Conventionaldefenses, whichrelyonposthocoutputfiltering,areoftenbrittleandfailto
+addresstherootcause: themodel’sinabilitytodistinguishtrustedinstructionsfromuntrusteddata[1].
+ThispaperproposesCountermind,amulti-layeredsecurityarchitectureintendedtoshiftdefensesfroma
+reactive,posthocposturetoaproactive,pre-inference,andintra-inferenceenforcementmodel. Thear-
+chitectureproposesafortifiedperimeterdesignedtostructurallyvalidateandtransformallinputs,andan
+internalgovernancemechanismintendedtoconstrainthemodel’ssemanticprocessingpathwaysbefore
+anoutputisgenerated. Theprimarycontributionsofthisworkareconceptualdesignsfor:(1)ASeman-
+ticBoundaryLogic(SBL)withamandatory,time-coupledTextCrypterintendedtoreducetheplain-
+textpromptinjectionattacksurface,providedallingestionpathsareenforced. (2)AParameter-Space
+Restriction (PSR) mechanism, leveraging principles from representation engineering [2], to dynami-
+cally controlthe LLM’s accessto internal semanticclusters, withthe goal ofmitigating semantic drift
+anddangerousemergentbehaviors. (3)ASecure,Self-RegulatingCorethatusesanOODAloopanda
+learningsecuritymoduletoadaptitsdefensesbasedonanimmutableauditlog. (4)AMultimodalIn-
+putSandboxandContext-Defensemechanismstoaddressthreatsfromnon-textualdataandlong-term
+semanticpoisoning. Thispaperoutlinesanevaluationplandesignedtoquantifytheproposedarchitec-
+ture’seffectivenessinreducingtheAttackSuccessRate(ASR)forform-firstattacksandtomeasureits
+potentiallatencyoverhead.
+Keywords: LLM security; defense-in-depth; prompt injection; activation steering; multimodal sandbox;
+threatmodeling.
+1 Introduction
+1.1 TheEvolvingThreatLandscapeoftheLLMEcosystem
+TherapidintegrationofLargeLanguageModels(LLMs)intoavastarrayofapplications,fromconsumer-
+facing chatbots to autonomous agents capable of executing complex tasks, marks a paradigm shift in soft-
+ware development and human-computer interaction [3]. As these models evolve into multimodal systems
+andintelligentagents,theircapabilitiesexpand,andsodoestheirattacksurface[4]. Thecoresecuritychal-
+lengestemsfromafundamentaldesigncharacteristicoftransformer-basedarchitectures,whichisthelackof
+a clear distinction between trusted system instructions and untrusted user-provided data. This ambiguity is
+thefoundationalvulnerabilityexploitedbyaclassofattacksknownaspromptinjection,whereanadversary
+craftsinputthatmanipulatestheLLMintodeviatingfromitsintendedbehavior[5].
+The threat landscape is evolving at a pace that outstrips traditional security measures. Initial attacks
+involved simple, handcrafted ”jailbreak” prompts designed to bypass safety alignments [6]. However, the
+fieldhasrapidlyadvancedtoincludeautomatedanduniversalpromptinjectionattacksthatcanbegenerated
+usinggradient-basedmethods,requiringminimaltrainingdatatoachievehighefficacy[7]. Adversariesare
+1
+5202
+tcO
+31
+]RC.sc[
+1v73811.0152:viXra
+
+--- Page 2 ---
+increasingly sophisticated, employing multimodal attack vectors where malicious instructions are hidden
+withinimagesorothernon-textualdatatobypasstext-basedfilters[8]. TheproliferationofLLM-powered
+agents, which can interact with external tools and APIs, introduces further risks, including indirect prompt
+injection, privilege escalation, and the potential for malicious instructions to propagate through a network
+of agents in a manner akin to a computer virus [9]. This escalating complexity necessitates a new security
+paradigmthataddressesthesethreatsatanarchitecturallevel.
+1.2 TheFallacyofPosthocFilteringandtheRiseofForm-FirstAttacks
+ThedominantsecurityparadigmforLLMshasbeenlargelyreactive,focusingonposthocfilteringofmodel
+outputs. This approach, which includes techniques like input sanitization, keyword filtering, and even so-
+phisticated LLM-based guardrails, treats the core model as an untrusted black box that must be contained
+[10]. This methodology is fundamentally flawed because it attempts to address the symptoms, such as
+harmfuloutputs,ratherthantherootcause. Itplacesdefendersinaperpetual“cat-and-mousegame”where
+they must constantly react to new attack techniques, a position of structural disadvantage [11]. Once a
+maliciously crafted input has been processed by the LLM, the model’s internal state may already be com-
+promised,makingreliableoutputfilteringexceedinglydifficult[12].
+This paper posits that the most potent threats are ”form-first” attacks, where the attack’s success is
+contingentonthestructure,encoding,orformatoftheinput,ratherthanpurelyitssemanticcontent. These
+attacks target the model’s processing logic at a pre-semantic level. The core argument of this work is that
+the LLM security problem should be reframed from a content moderation challenge to an architectural
+designchallenge. Currentapproachesattempttobuilda”cage”aroundaninsecureprocess. Amorerobust
+solution requires redesigning the ”operating system” in which the LLM functions to be secure by design.
+Thisinvolvescreatingastructuralandverifiableseparationbetweentrustedinstructionsanduntrusteddata
+payloads,asolutionthatcannotbeachievedthroughsimplecontentfilteringalone.
+1.3 TheCountermindApproach: AnOverview
+Inresponsetothesechallenges,weintroduceCountermind,aconceptualsecurityarchitecturethatembodies
+a paradigm shift from reactive filtering to proactive, structural defense. Countermind is not designed as a
+simplewrapperorfilter,butratherasadeeplyintegrated,multi-layeredsystemthatgovernsallinteractions
+withacoreLLM.Thearchitectureisanalogoustoamedievalcastle,whichisnotdefendedbyasinglewall
+butbyaseriesofconcentric,specializeddefenserings. Eachlayerperformsadistinctvalidationandcontrol
+function,ensuringthatthreatsareneutralizedattheearliestpossiblestage.
+TheCountermindarchitectureisbuiltuponfourfoundationalpillars:
+1. SemanticBoundaryLogic(SBL).AnenforcedAPIperimeterthatdecomposes,validates,andauthen-
+ticatesincomingrequestsbeforeprocessing,withtheaimofreducingplaintextpromptexposure.
+2. Parameter-Space Restriction (PSR). An intra-inference control that modulates access to internal se-
+mantic clusters during decoding—via projection/masking of activations—with the goal of limiting se-
+manticdriftandunsafebehaviors.
+3. Secure,Self-RegulatingCore. Agovernanceandlearningcomponentthatencodeshigh-levelpolicies,
+maintainsanappend-only,tamper-evidentauditlog,andadaptsitsconfigurationinresponsetoobserved
+signals.
+4. MultimodalandContextualDefenses. Modulesfornon-textmodalitiesandlong-horizoncontext(e.g.,
+RAG),intendedtomitigaterisksfromembeddedinstructionsandsemanticpoisoning.
+1.4 Contributions
+ThispapermakesthefollowingprimarycontributionstothefieldofLLMsecurity:
+2
+
+--- Page 3 ---
+• A novel fortified API perimeter (SBL) that deconstructs requests into Origin, Metadata, and Payload
+(OMP) and enforces structural integrity via a mandatory, time-coupled cryptographic payload wrapper
+(TextCrypter),isintendedtoreducetheattacksurfaceforconventionalpromptinjection.
+• To the author’s knowledge, one of the first conceptual applications of activation-steering principles for
+proactive security governance (Parameter-Space Restriction), moving beyond post hoc safety align-
+ment...
+• Anarchitectureforaself-regulatingandresilientsecuritycorethatintegratesconstitutionalprinciples,an
+immutable audit log, and an adaptive OODA loop to learn from attacks and dynamically update its own
+defensiveposture.
+• Aholisticdefenseframeworkthatextendsprotectiontomultimodalinputs(viaadedicatedsandbox)and
+defends against long-term manipulation through advanced context management techniques (Semantic
+Zoning,CDS,VKV).
+2 Related Work
+TheCountermindarchitecturebuildsuponandextendsseveralestablishedandemergingareasofLLMsecu-
+rityresearch. Acomprehensivereviewofthecurrentlandscapeprovidescontextforitsnovelcontributions
+[4].
+Prompt Injection and Jailbreak Defenses: A significant body of work focuses on defending against
+promptinjectionandjailbreaking[5]. Commonstrategiesincludeinputvalidationandsanitization,context-
+awarefiltering,andoutputencoding[13]. Someapproachesusedefensivepromptingoraddspecialtokens
+to help the model distinguish instructions from data [14]. However, these test-time defenses are often less
+effectivethantraining-timemodifications[15]. Countermind’sSBLandTextCrypterofferafundamentally
+different, proactive defense that is intended to reduce the attack surface, provided all ingestion paths are
+enforced.
+LLM Guardrails and Output Filtering: The use of ”guardrails” to filter LLM inputs and outputs is a
+commonindustrypractice. Thesesystemsactasexternalsafetylayers, blockingpromptsorresponsesthat
+violate predefined policies. While useful, they represent a post hoc approach that Countermind aims to
+overcome. Therelianceonexternalfilterscanbebrittleandoftenfailstoaddresstherootcauseofharmful
+generation [12]. Countermind’s Parameter-Space Restriction (PSR) moves this control from a reactive
+output check to a proactive, intra-inference mechanism that constrains the model’s internal generative pro-
+cess.
+RepresentationEngineeringandActivationSteering: PSRisgroundedintheemergingfieldofRepre-
+sentationEngineering(RepE),whichseekstounderstandandcontroltheinternalrepresentationsofneural
+networks [2]. A key technique within RepE is activation steering, where vectors are added to a model’s
+activations during inference to guide its behavior [16]. While most applications of activation steering fo-
+cus on influencing stylistic or behavioral traits (like honesty or reducing bias) [17], Countermind’s PSR is
+one of the first conceptual applications of this principle as a hard security gate, preventing the model from
+accessingentiresemanticdomainsbasedonasecuritypolicy.
+ConstitutionalAIandRLHF: ThedominantparadigmsformodelalignmentareReinforcementLearn-
+ing from Human Feedback (RLHF) and Constitutional AI (CAI), which use human or AI-generated feed-
+back to fine-tune models toward safer behavior [18]. These methods modify the model’s weights through
+3
+
+--- Page 4 ---
+training. Countermind’sSecure,Self-RegulatingCorecomplementstheseapproachesbyprovidinganar-
+chitectural enforcement mechanism. Instead of relying solely on the model’s learned behavior, it enforces
+immutableprinciplesatruntime,offeringamoreresilientdefenseagainstnovelattacksthatbypasstraining-
+basedalignments.
+MultimodalSecurity: AsLLMsbecomemultimodal,theyintroducenewattacksurfaceswheremalicious
+contentcanbehiddeninimages,audio,orvideo[8]. Theresearchinthisareaisstillnascent. Countermind’s
+Multimodal Input Sandbox provides a dedicated, pre-processing pipeline to analyze and neutralize such
+threatsbeforetheyreachthecoremodel,addressingacriticalandgrowingvulnerability[19].
+Threat Modeling for LLMs: Established cybersecurity frameworks like STRIDE are being adapted to
+theuniquechallengesofAIandLLMsystems[20]. TheCountermindarchitectureisdesignedwithsucha
+structuredthreatmodelinmind,providingspecificcountermeasuresforthreatsliketampering,information
+disclosure,andelevationofprivilegewithinthecontextofanLLM-poweredapplication.
+3 Threat Model & Assumptions
+To formally define the security context for Countermind, a threat model is established based on standard
+methodologies like STRIDE, adapted for the unique characteristics of LLM-powered systems [20]. The
+modelassumesasophisticatedadversarywithblack-boxaccesstothesystem’sAPI.
+Table1: ThreatmodelbasedontheSTRIDEmethodology.
+Category Description
+AttackerGoals
+1. Policybypass(jailbreak): CoercetheLLMtogenerateharmfulor
+restrictedcontent.
+2. Instructionhijacking: Overridesysteminstructionstoexecuteunau-
+thorisedfunctions(e.g.,tooluse).
+3. Informationdisclosure: Extractsensitivedatafromsession,RAG
+context,ormodelmemory.
+4. Denialofservice: Inducecost/latencyspikesviaresource-intensive
+operations.
+AttackerCapabilities
+1. Inputcontrol: Fullcontroloverpromptsandmultimodalinputssub-
+mittedtotheAPI.
+2. Externalresourcecontrol: AbilitytohostmaliciouscontenttheLLM
+isinstructedtoprocess.
+3. Black-boxaccess: InteractviapublicAPI;noaccesstointernals,
+weights,orsecretkeys.
+AttackChannels
+1. DirectAPIinteraction: Craftedtext/image/audioorotherformats.
+2. Indirectingestion: Poisoningwebsites/documentsprocessedviaRAG
+ortools.
+3. Supplychain: Compromisingpluginsorpre-trainedcomponents.
+Continuedonnextpage
+4
+
+--- Page 5 ---
+Table1—Continuedfrompreviouspage
+Category Description
+TrustRoots&Assumptions
+1. Securecryptography: Secretsandprimitives(e.g.,TextCrypter)are
+protectedfromtheadversary.
+2. ImperfectLLM:Standardalignedmodel;notinherentlyrobusttoso-
+phisticatedattacks.
+3. Trustedcomputingbase: Countermindcomponents,OS,andHWare
+uncompromised.
+4. Ingestionenforcement: Thesandboxguaranteeholdsassumingall
+requestpathsterminateattheSandboxandnoprivilegedside-channels
+exist.
+Out-of-scopeThreats
+1. Physicalattacksonhostinginfrastructure.
+2. Insiderthreatsbyprivilegeduserswithaccesstocorecompo-
+nents/keys.
+3. Network-layerDoS(large-scaleDDoSoutsidetheLLMcompute
+path).
+3.1 StateoftheArtinLLMAttacks: PromptInjection,Jailbreaking,andAgenticRisks
+A comprehensive understanding of the threat landscape is essential for designing robust defenses. LLM
+attackshaveevolvedsignificantly,targetingvariousaspectsofthemodel’slifecycleanddeploymentcontext.
+Prompt Injection: This is a class of vulnerabilities where an attacker manipulates an LLM’s inputs to
+causeunintendedbehavior. Theseattacksarebroadlycategorizedintotwotypes.
+Direct prompt injection, often referred to as jailbreaking, involves crafting prompts that explicitly
+instruct the model to override its safety guidelines or system instructions [5]. Techniques include role-
+playingscenarios,instructionbypassing,andobfuscationusingencodingsorcomplexlanguage[13].
+Indirect prompt injection occurs when an LLM processes data from an external, attacker-controlled
+source,suchasawebpageoradocument. Themaliciouspromptisembeddedwithinthisexternaldataand
+isexecutedbytheLLMwiththeprivilegesofthecurrentsession,potentiallyleadingtodataexfiltrationor
+unauthorizedactions[21].
+Jailbreaking: As a specific form of prompt injection, jailbreaking aims to circumvent the safety align-
+ment measures implemented during model training, such as Reinforcement Learning from Human Feed-
+back (RLHF) [6]. The field has progressed from manually crafted prompts shared in online communities
+tosophisticated,automatedattackgenerationmethods. Optimization-basedtechniques,suchastheGreedy
+Coordinate Gradient (GCG) attack, use gradient information to automatically find adversarial suffixes that
+arehighlyeffectiveatjailbreakingmodels[22]. Comprehensivesurveyshavecategorizedthevastlandscape
+ofjailbreakingtechniques,highlightingtheirincreasingdiversityandeffectivenessagainstevenstate-of-the-
+artmodels[3].
+Agentic Risks: The emergence of LLM-powered agents, which can use tools, maintain memory, and
+interact with other systems, has significantly expanded the threat surface [4]. An agent’s ability to call
+external APIs can be exploited to turn a successful prompt injection into a more severe vulnerability, such
+asRemoteCodeExecution(RCE),Server-SideRequestForgery(SSRF),orSQLInjection. Furthermore,in
+5
+
+--- Page 6 ---
+multi-agentsystems,acompromisedagentcanspreadmaliciousinstructionstootheragents,aphenomenon
+termed ”prompt infection,” which can lead to cascading failures or coordinated malicious behavior across
+thesystem[9]. TheuniqueinteractionpatternsofmobileLLMagents,whichoperatewithelevatedsystem
+privileges and interact with GUI elements, introduce another set of distinct attack surfaces, including UI
+manipulationanddeeplinkforgery[23].
+MultimodalandStructuralAttacks: Adversariesareincreasinglyexploitingnon-textualmodalities. Ty-
+pographic attacks embed adversarial text within images, which can be imperceptible to humans but are
+processed by the LLM’s vision encoder, bypassing text-based safety filters [8]. Similarly, attacks can be
+encodedwithinstructureddataformatslikeJSONorXML,manipulatingthemodel’sparsingandinterpre-
+tationlogictoexecutehiddencommands.
+3.2 CoreEvaluationMetrics
+To quantitatively assess the effectiveness and practicality of LLM security systems, a set of standardized
+metricsisessential. TheevaluationofCountermindisbasedonthefollowingcoremetrics:
+• AttackSuccessRate(ASR):Thisistheprimarymetricforsecurityeffectiveness,definedasthepercent-
+age of adversarial inputs that successfully elicit the intended malicious behavior from the target system.
+Asuccessfulattackcouldbeajailbreakthatgeneratesharmfulcontent,aninjectionthattriggersanunau-
+thorizedtoolcall,oranyotheroutcomealignedwiththeadversary’sgoals. ThemeasurementofASRcan
+be nuanced, considering not just binary success but also the severity of the violation and the diversity of
+successfulattacks[24].
+• AbstentionRate: Thismetricmeasuresthefrequencywithwhichthemodelcorrectlyrefusestoprovide
+an answer to an unsafe, inappropriate, or unanswerable query. High abstention on harmful prompts is a
+key indicator of a robust safety system. It is crucial to distinguish a safe refusal from an incorrect but
+harmless response, as the former demonstrates proper safety alignment while the latter may indicate a
+failureofcomprehension[25].
+• False-BlockRate(FBR):AlsoknownastheFalsePositiveRate,thismetricquantifiesthepercentageof
+benign, legitimate user prompts that are incorrectly blocked or filtered by the security system. The FBR
+isacriticalmeasureofthesystem’susabilityandutility. Anoverlyaggressivesecuritysystemwithahigh
+FBR may render the LLM application unusable for legitimate tasks, highlighting the inherent trade-off
+betweensecurityandfunctionality.
+• LatencyOverhead: Thismetricmeasurestheadditionalprocessingtimeintroducedbythesecuritymech-
+anismscomparedtoabaseline,undefendedsystem. Forreal-timeandinteractiveapplications,minimizing
+latencyisacriticalnon-functionalrequirement. Highlatencyoverheadcanseverelydegradetheuserex-
+perience,makingitakeyconsiderationinthepracticaldeploymentofanysecurityarchitecture[26].
+4 System Overview
+4.1 ArchitecturalBlueprintandTrustBoundaries
+The Countermind architecture is designed as a comprehensive, proactive security intermediary that sits
+between the end-user and the core LLM. It is not a monolithic application but a collection of specialized,
+interconnected modules, each operating within a clearly defined trust boundary. In security architecture, a
+trustboundaryisalogicalperimeterthatseparatestrustedcomponentsfromuntrustedones[27]. Anydata
+crossingatrustboundarymustbesubjecttovalidationandauthentication.
+Countermindestablishesseveralkeytrustboundaries:
+6
+
+--- Page 7 ---
+1. TheExternalBoundary: Thisistheprimaryboundarybetweentheuntrustedexternalworld,including
+userinputsandexternaldatasources,andthefirstcomponentoftheCountermindsystem,theSBL.All
+incomingdataisconsideredhostilebydefaultuntilitisrigorouslyvalidated.
+2. The InternalComponent Boundaries: Each major componentwithin Countermind, such asthe SBL,
+PSR, Secure Core, and Sandbox, operates in its own logical space. The interfaces between these com-
+ponents are themselves trust boundaries, ensuring that a potential compromise in one module does not
+automaticallygrantaccesstoothers. Forexample,theoutputoftheSBLisvalidatedbeforebeingpassed
+tothePSRmodule.
+3. TheCoreModelBoundary: ThisisthefinalboundarybetweentheCountermindgovernanceframework
+and the core LLM itself. The PSR acts as the gatekeeper at this boundary, controlling precisely what
+semanticinformationisallowedtoinfluencethemodel’sgenerativeprocess.
+Thisstructured approach, visualized inthe system’sblock diagram, ensures thatsecurity isenforced at
+multiplestagesoftherequestlifecycle,adheringtotheprincipleofdefense-in-depth.
+Figure1: Multi-LayerOverviewoftheCountermindArchitecture.
+4.2 CoreComponentsandSignalFlow
+The architecture consists of four primary components, each responsible for a distinct aspect of security
+enforcement.
+• SBL This is the outermost defense layer, acting as the system’s fortified API gateway. It is responsible
+fortheinitialtriage,syntacticvalidation,cryptographicverification,andsemanticroutingofallincoming
+requestsbeforetheyarepermittedtoproceeddeeperintothesystem.
+• Parameter-Space Restriction (PSR): This is an innovative intra-inference control mechanism. It func-
+tions as a “semantic shield” by dynamically gating the LLM’s access to its own internal activation space
+based on a granular policy. This prevents the model from generating outputs based on prohibited or
+irrelevantconcepts.
+• Secure, Self-Regulating Core: This is the central governance and intelligence hub of the system. It
+comprises a Semantic Trust Core, which enforces immutable ”constitutional” principles, and a Learning
+Security Core, which monitors system behavior, learns from attack patterns, and adaptively updates the
+system’sdefensiveposture.
+• Multimodal Input Sandbox: This is a specialized gateway, enforced by gating and mandatory routing,
+where attempted bypasses are blocked and audited. It is designed to analyze, sanitize, and neutralize
+threatsembeddedinnon-textualinputs,suchasimages,videos,andaudiofiles,beforetheycaninfluence
+thecoreLLM.
+The typical signal flow for a user request is as follows: A request from a user first enters the SBL. If
+the request contains multimodal data, it is routed to the Multimodal Input Sandbox for analysis. Once
+theinputisvalidatedandsanitized,itispassedtotheParameter-SpaceRestriction(PSR)module,which
+7
+
+--- Page 8 ---
+determinestheallowedsemanticclustersforprocessing. Therequest,alongwiththePSRpolicy,isthensent
+totheCoreLLM.TheLLM’sgenerationprocessisconstrainedbythePSRpolicy. Thegeneratedoutputis
+againgatedbythePSRbeforebeingpassedbackthroughtheSBLtotheuser. Throughoutthisprocess,the
+Secure,Self-RegulatingCoremonitorsallinteractions,logsthemimmutably,andusesthisdatatoupdate
+thepoliciesofboththeSBLandthePSRmoduleviaacontinuousfeedbackloop.
+4.3 DesignGoalsandNon-Goals
+To clarify the scope and intent of the Countermind architecture, it is essential to define its explicit design
+goalsandnon-goals.
+DesignGoals:
+• ProactiveThreatNeutralization: Theprimarygoalistodetectandblockattacksattheearliestpossible
+stageoftherequestlifecycle,ideallybeforethecoreLLMiseverinvoked.
+• Structural Security: Defenses are based on verifiable and deterministic properties of the input, such as
+itscryptographicintegrity,structure,andformat,ratherthanrelyingsolelyonthefallibleandoftenbrittle
+semanticanalysisofnaturallanguage.
+• Defense-in-Depth: Thearchitectureisdesignedsuchthatthefailureorbypassofasingledefensivelayer
+doesnotleadtoafullsystemcompromise. Redundantandoverlappingcontrolsprovideresilience.
+• Adaptability: The system is designed to be dynamic, enabling the Learning Security Core to analyze
+observedattackpatternsandautomaticallyupdateitsowndefensivepoliciesovertime.
+• InterpretabilityandAuditability: Securitydecisionsmadebythesystem,particularlythosebythePSR
+module,areintendedtobetraceabletoexplicitpolicies. Theimmutableauditlogensuresthatallsystem
+actionsaretransparentandavailableforforensicanalysis.
+Non-Goals:
+• Perfect LLM Alignment: Countermind does not aim to ”fix” or fundamentally alter the weights of
+the core LLM. It operates on the assumption that the LLM is an imperfect and potentially vulnerable
+component,anditsgoalistogoverntheuseofthiscomponentsecurely.
+• EliminationofAllHarmfulContent: Theobjectiveisnottocreateacompletely”censored”modelthat
+refuses all sensitive topics. Rather, the goal is to prevent malicious hijacking of the model’s capabilities
+andtoenforceaconfigurable,policy-drivensecurityposture.
+• ZeroPerformanceOverhead: Thearchitectureexplicitlyacknowledgesthatrobustsecuritymeasuresin-
+curaperformancecost. Thegoalisnottoeliminatethisoverheadbuttomakeitquantifiable,manageable,
+andadeliberatetrade-offinthesystem’sdesign.
+5 Semantic Boundary Logic: A Fortified API Perimeter
+The SBL is the first and most critical line of defense in the Countermind architecture. It transforms the
+traditionalconceptofanAPIendpointfromasimpledatareceiverintoanintelligent,multi-stagevalidation
+andcontrolsystem. Itspurposeistofilterandvalidatetheintentionandstructureofaninputlongbeforeit
+reachesthecoremodel.
+5.1 TheOrigin-Metadata-Payload(OMP)Decomposition
+The foundational principle of the SBL is the systematic deconstruction of every incoming request into
+three distinct, analyzable components. This OMP decomposition allows for a granular, multi-faceted risk
+assessment.
+8
+
+--- Page 9 ---
+• Origin: This component represents the source of the request. The system validates the origin against
+a registry of known and trusted sources, such as a specific version of a mobile application, a registered
+third-partyplugin,oraninternaldevelopmentclient. Theorigin’sidentity,sessionintegrity,andhistorical
+behaviorarethefirstfactorsinthetrustassessment.
+• Metadata: Thiscomponentprovidesstructuredinformationaboutthenatureofthedatabeingtransmitted.
+It declares the payload type (e.g., INPUT PLAINTEXT, INPUT PICTURE, INPUT VIDEO) and the
+expectedformat. Thisdeclarationallowsthesystemtoapplythecorrectvalidationrulesandroutinglogic
+withouthavingtofirstinferthedatatypefromtherawcontent.
+• Payload: This is the core content of the request. Crucially, the SBL enforces strict rules not just on the
+semantic content but on the form of the payload. For text-based inputs, the payload is required to be
+encapsulatedinaself-validating,authenticatedencodinggeneratedbytheTextCrypter. Thisincludesan
+embeddedHMAC-SHA256toproveitsintegrityandauthenticity.
+5.2 LayeredDefense: SyntacticGate,Intent-BasedRouter,andSemanticFilter
+BuildingontheOMPstructure,athree-layerdefenseprogressivelydeepensitsanalysisoftherequest.
+• Layer 1 – Syntactic Gate: This is the first hard barrier, acting as an unyielding ”byte-gate.” It performs
+purelystructuralvalidationwithoutanysemanticinterpretation. Itsfunctionsinclude:
+– Strict Character Allowlist: Only characters from a predefined, minimal set (e.g., the Base62 output
+of the Text Crypter) are accepted. This immediately blocks a wide range of obfuscation and injection
+attacksthatrelyoncomplexUnicodecharacters,zero-widthspaces,orotherencodingtricks.
+– Cryptographic Integrity Check: It validates the embedded HMAC-SHA256 of the payload using
+a shared secret key. Any payload that has been tampered with in transit or was not generated by
+a legitimate client fails this check. The use of HMAC-SHA256 provides strong guarantees of both
+frame integrity and message authenticity, while a simpler CRC might only be used for faster, non-
+cryptographicframeintegritychecks.
+The vast majority of automated, fuzzing-based, and simple injection attacks are defeated at this funda-
+mentallayer.
+• Layer2–Intent-BasedRouting: Oncearequestpassesthesyntacticgate,thislayerperformsaninitial
+semantic classification to determine its intended function, not its detailed content. Based on a dynamic
+”BaseTable,”itroutestherequesttotheappropriatedownstreamhandler. Forexample,arequestclassified
+asCodeFragment.Analysisisroutedtoanisolatedsandboxenvironment,whilearequestclassified
+asSystem.Config.Modificationisblockedorroutedtoahigh-securityadmininterfacerequiring
+multi-factorauthentication. AstandardconversationalqueryisroutedtowardsthecoreLLMviathePSR.
+This routing table is not static; it can be dynamically updated based on context, such as time of day
+or the user’s current trust score. Policy updates are versioned, and the version hash is included in the
+auditlog,ensuringthateveryruntimedecisionisdeterministicallyreproduciblefromthecombinationof
+(policy version,inputs).
+• Layer3–SemanticFilter&TrustEngine: Thisisthedeepestlayeroftheperimeter,performingamore
+nuancedanalysisofuserintentandbehavior. Itlooksforcomplexpatternsindicativeofmaliciousintent,
+suchassuddenandillogicaltopicchanges,hiddeninstructionswithinseeminglybenigntext,orattempts
+at semantic obfuscation. This layer maintains a session-based Trust Score for each user or origin. The
+scoreiscalculatedusingafractallogicwhereconsistent,safeinteractionsslowlyincreasethescore,while
+a single suspicious request can cause a radical and significant decrease. If the Trust Score falls below a
+predefinedthreshold,theSoft-LockEngineisactivated. Thisengineinterceptsthefinalbotresponseand
+replacesitwithagracefuldegradationresponse,effectivelydegradingtheserviceforthesuspicioususer.
+The governance of this mechanism, including threshold calibration, automatic unfreezing policies, and
+pathwaysforhumanreviewoffalsepositives,isdetailedintheEthicsStatement.
+9
+
+--- Page 10 ---
+5.3 TheTextCrypter: AuthenticatedEnvelope(NoCustomCrypto)
+AcornerstoneoftheSBListhemandatoryuseofanauthenticated,time-boundenvelopeforalltext-based
+payloads. Werelyonstandardmessageauthentication(e.g.,HMAC-SHA-256;JWS/PASETO-styleMAC)
+withnonceandTTL.Thisisnotencryptionandnotcustomcryptography.
+Securityintent. Nounverifiedplaintextentersthecoresystem. Theboundaryshiftstotheclient: semantic
+intentisframedandauthenticatedbeforetransmission.
+Mechanism(threestages).
+1. Canonical envelope. Build a canonical JSON-like envelope E with metadata and the original UTF-8
+payloadas-is:
+• alg(e.g.,HMAC-SHA-256),optionalkid
+• nonce(unique),iat(issued-at),exp(expiry=iat+TTL)
+• payload b64url(base64urloftherawUTF-8payload)andpayload sha256(integrityhint)
+2. Authentication&anti-replay. Computemac = HMAC(k, canonical(E without mac)). The
+serverkeepsananti-replaycachekeyedby(nonce, kid)andenforcesiat/exp. Keysrotateperiodi-
+cally.
+3. Deterministic serialization (transport). Envelope metadata uses a strict Base62/URL-safe alphabet;
+the payload remains UTF-8 and is only base64url-encoded. No dynamic alphabet remapping of user
+content. Thisistransportframing,notsecrecy.
+I18N/UX. Theallowlistappliestotheenvelopefields(controlplane)only. Theuserpayload remainsfull
+UTF-8/UnicodeandisMAC-protectedas-is;internationaltextandemojisarepreserved.
+Optionalmicro-integrity(defense-in-depth). Per-segmenttags(e.g.,hashes/HMACsforwords/phrases)
+may be included as non-authoritative hints inside the payload and are not required for security decisions;
+theauthoritativecheckistheenvelopeMAC.
+Server-sideverification. Onreceipt: (1)validatemac,(2)checknonce/anti-replayandtimewindow,(3)
+decodepayload b64urlbacktoUTF-8,(4)optionallyverifymicro-tagsifpresent. Anyfailureleadsto
+immediaterejection.
+Example (conceptual). {alg:"HMAC-SHA-256", kid:"k1", nonce:"...", iat:1723833600,
+exp:1723833660, payload sha256:"...", payload b64url:"...", mac:"..."}
+10
+
+--- Page 11 ---
+Table2: OverviewofSBLmodules.
+Module Purpose Inputs Outputs Performance
+implication
+Byte-Gate Enforcessyntac- Rawrequest Verdict(Pass/- Verylow(byte-
+ticvalidityand string. Fail),reason. levelchecks;no
+characterrestric- NLP).
+tions;blocksnon-
+allowlistedchar-
+actersandmal-
+formedframes.
+TextCrypter(Server) Decodesand Encodedpayload Decodedplain- High(crypto-
+validatestime- fromByte-Gate. text;integrityver- graphicopera-
+coupled,authenti- dict(Pass/Fail). tions;determinis-
+catedpayloads. tic).
+BaseTableRouter Classifiesrequest Decodedplain- Routing Medium(seman-
+intent(metadata- text;metadata. decision(e.g., ticclassification).
+aware)androutes ROUTE TO SANDBOX).
+totheappropri-
+atehandler(e.g.,
+CoreLLM,Sand-
+box).
+Trust-Scaler Computesses- Historyofre- Updatedtrust Medium(stateful
+siontrustfrom questsandver- score(float). scoring).
+interactionhis- dicts.
+tory(topicshifts,
+inconsistencies,
+priorverdicts).
+Soft-LockEngine Producesgrace- Low-trustsig- Modifieduser- Low(lightweight
+fuldegradation nal;originalbot facingresponse. proxy).
+responseswhen response.
+trustislow.
+6 Parameter-Space Restriction (PSR): Controlling Semantic Activation
+WhiletheSBLfortifiesthesystem’sperimeter,theParameter-SpaceRestriction(PSR)mechanismprovides
+a powerful, second layer of defense that operates deep within the model’s generative process. It represents
+a fundamental shift from filtering outputs to proactively controlling the internal ”thought process” of the
+LLM.
+6.1 Motivation: PreventingSemanticDriftandDangerousEmergence
+The core motivation for PSR is the acknowledgment of the ”post hoc filter fallacy.” Relying on filtering
+the final text output is insufficient because harmful or undesirable content often arises from the emergent
+11
+
+--- Page 12 ---
+combinationofseeminglybenignconceptswithinthemodel’svast,high-dimensionalparameterspace. This
+leadstotwoprimaryfailuremodes:
+• Semantic Drift: During the generation process, the model’s internal representation of a concept can
+”drift” into an unsafe or irrelevant semantic domain due to probabilistic associations learned from its
+trainingdata. Forexample,aqueryabout”howtobakeacake”mightactivateinternalrepresentationsre-
+latedtoheat,chemicalreactions,andexpansion,whichcouldbesemanticallyadjacenttoconceptsrelated
+tochemistryorevenexplosives. Whilethefinaloutputmaybeharmless,themodelhastraversedarisky
+internal pathway. The study of semantic change in linguistics provides a formal basis for understanding
+how word meanings can shift and evolve over time, a phenomenon mirrored within the latent space of
+LLMs[28].
+• Dangerous Emergence: LLMs can synthesize new, dangerous information by combining knowledge
+from disparate, individually harmless domains. For example, a model could combine its knowledge of
+publicsoftwarelibrarieswithitsknowledgeofcommonvulnerabilitypatternstogenerateanovel,working
+exploit. Post hoc filters that look for known malicious code signatures would fail to detect such a novel
+synthesis.
+PSRisdesignedtopreventthesefailuresattheirsourcebystructurallylimitingthe”conceptualvocabulary”
+themodelisallowedtouseforanygiventask.
+6.2 Mechanism: AnActivation-SteeringBridgeforPre-OutputGating
+The technical implementation of PSR is best understood as a security-oriented application of Representa-
+tion Engineering (RepE), a field that focuses on understanding and manipulating the internal representa-
+tions(activations)ofneuralnetworks[2]. Specifically,PSRleveragesprinciplesfromActivationSteering,
+wherevectorsareaddedtothemodel’sactivationsduringinferencetoguideitsbehavior[16].
+However, unlike typical applications of activation steering which aim to subtly influence style, PSR
+usesthismechanismasahardgatingfunction. Itoperatesasan”activation-steeringbridge”thatisplaced
+logically between the model’s final processing layers and its output token selection layer. The mechanism
+worksasfollows:
+1. Arequest,havingbeenvalidatedbytheSBL,ismappedtoapolicythatdefinesasetofallowed“semantic
+clusters.”
+2. DuringtheLLM’sforwardpass,ateachgenerationstep,thePSRmechanismintervenesonthemodel’s
+hiddenstateactivations.
+3. It ensures that the activations are constrained to lie within the subspace corresponding to the allowed
+semantic clusters. Activations pointing towards prohibited clusters are suppressed or zeroed out. This
+hardgatingcandegradeoutputquality,soa“softgating”approach,whereA′ = α·A +(1−α)·Π(A )
+l l l
+andαisadata-drivencoefficient,isapotentialrefinementtobalancesafetyandutility.
+4. Onlythenisthemodifiedactivationpassedtothefinallayerforpredictingthenexttoken.
+Thisapproachisaformof”cognitivealignment”ratherthan”behavioralalignment.”Insteadoftrainingthe
+model to act safely after the fact (as in RLHF), PSR constrains what the model is allowed to think about
+in the first place. This provides a more fundamental and robust form of control, as it is resilient to novel
+linguisticphrasingsofamaliciousrequest. Iftheentiresemanticclusterrelatedto”weaponmanufacturing”
+is disabled by the PSR policy, no amount of clever wording should be able to activate the corresponding
+internal representations needed to generate a harmful response. We leave precise overhead quantification
+to future work; preliminary profiling indicates a modest overhead for projection and a lower overhead for
+masking.
+12
+
+--- Page 13 ---
+PSRhook,operator,cost. Lety ∈ Rdbetheresidualstreamatdecodestept(afterthelastN transformer
+blocks).
+Let Π ∈ Rd×k have orthonormal columns spanning the allowed subspace and define the projector P :=
+ΠΠT.
+Wegatedecodingby
+y′ = αy+(1−α)Py, α ∈ [0,1].
+Hard gating is obtained with α = 0, while soft gating trades safety for utility via policy-driven α. Hook
+pointsaretheresidualstreamsofthelastN blocks(typicallyN ∈ {1,...,4}). Thecomputationalcostper
+token is O(dk) for the projection (compute v = ΠTy and then y′ = αy +(1−α)Πv). The matrix Π is
+precomputed/frozen;nobackpropagationisinvolvedatinference.
+6.3 GovernanceThroughSemanticClustersandPrefix-Rights
+The governance of the PSR mechanism is based on a simple yet powerful policy language comprising two
+coreconcepts.
+• Semantic Clusters: The model’s vast parameter space is conceptually partitioned into logical, thematic
+domains. These are not necessarily disjoint but represent distinct areas of knowledge or capability (e.g.,
+Code.Python, History.WWII, Biology.Genetics, System.InternalAPIs). The defini-
+tionoftheseclustersisacriticalengineeringtask,likelyrequiringacombinationofautomatedclustering
+techniquesonactivationdataandexperthumanoversight.
+• Prefix-Rights: Foreachincomingquery,apolicyisgeneratedthatassignsspecific,granularrightstoone
+ormoresemanticclusters. Theserightsareexpressedasprefixesanddefinethepermissibleoperations:
+– READ: Allows the model to access and reproduce information from the cluster. This is the most
+restrictiveright,suitableforfactualrecall.
+– SYNTH: Allows the model to synthesize new information and create novel combinations within the
+activatedcluster. Thisisrequiredforcreativetaskslikewritinganewstoryorgeneratinganewrecipe.
+– EVAL:Allowsthemodeltoevaluateanexternalinput(e.g.,apieceofcodeprovidedbytheuser)inthe
+contextofthecluster’sknowledge. Forexample, EVALontheSecurity.CodeAnalysiscluster
+wouldallowthemodeltocheckforvulnerabilitieswithoutexecutingthecode.
+– CROSS:Ahighlyprivilegedandrestrictedrightthatallowsthecontrolledcombinationofinformation
+betweentwoormoreexplicitlyspecifiedclusters. Thisisnecessaryforcomplex,multi-domainqueries
+butisdisabledbydefaulttopreventunintendedinformationleakage.
+• ThematicIsolation&QueryDecomposition: ThedefaultsecuritypostureofPSRisstrictthematiciso-
+lation. Nocross-talkbetweenclustersispermittedunlessexplicitlyauthorizedbyaCROSSright. Com-
+plex user queries that touch upon multiple domains are first decomposed by a pre-processing step. The
+systemthenprocessestherequestsequentially,activatingtheCode.PythonclusterwithSYNTHrights
+to generate the script structure, and then activating the Finance.MarketData cluster with READ
+rightstoprovidethecontext,allwhilepreventinganydirect,uncontrolledinteractionbetweenthem. The
+PSRpolicyforRAG-sourcedcontext(e.g.,fromRAG.*clusters)wouldexplicitlydenySYNTHorEVAL
+rights,preventingthemodelfrominterpretingretrievedtextasinstructions.
+• Governance Hook: The PSR framework provides a powerful hook for implementing a system-level
+”Constitution.” High-level safety and ethical principles can be translated into permanent PSR rules. For
+example,aconstitutioncouldenforceapermanentpolicythatgrantsonlyREADrightstoclustersdeemed
+sensitive or completely disables all rights for clusters deemed dangerous. A concrete policy rule might
+looklike: deny CROSS(*, Tools.*) unless user role=developer privileged.
+13
+
+--- Page 14 ---
+Policyartifact. Adeny-by-defaultclusterpolicy(YAML)usedbyourprototypeisprovidedinAppendixA;
+PSRgatesα,toolaccess,andcross-clusterrightsaccordingly.
+Table3: ExampleofPSRPolicyAssignmentbasedonUserIntent.
+UserIntent Activated Assigned Default OverrideRule
+(Example) Cluster(s) Rights Policy Example
+”Explain’Hello Code.C++. READ Denysynthesisof Ifuserisatrusted
+World’inC++” Reference new,creativecode. developer,elevate
+toSYNTHtoallow
+codegeneration.
+”Writeanewrecipe Kitchen.Recipes. SYNTH Allowcombination N/A
+forcheesecake” Desserts ofingredients
+withinthecluster.
+Isolatefrom
+Chemistry.
+LabSafety.
+”Analyzethiscodefor Security. EVAL Denyexecutionof Ifinasandboxed
+SQLinjection” CodeAnalysis. thecode. Isolate testenvironment,
+SQLi fromSystem. allowCROSSwith
+Database. System.
+Access. Database.
+Accessforlive
+testing.
+”WriteaC++program 1. Code.C++. 1. Process Ahighlyprivileged
+tobakeacake” Reference SYNTH sequentially. Deny ”creativeagent”
+2. Kitchen. 2. CROSSbetween mightbegranted
+Recipes.Desserts READ clusterstoprevent CROSSrightsfor
+semanticdrift. novelcombinations.
+7 The Secure, Self-Regulating Core
+The Secure, Self-Regulating Core is the central intelligence and governance unit of the Countermind ar-
+chitecture. It ensures the system’s long-term integrity, enforces foundational principles, and enables the
+architecture to adapt and evolve its defenses over time. It transforms the system from a static set of filters
+intoaresilient,learningentity.
+7.1 Principles: ConstitutionalEnforcementandImmutableAuditLogs
+TheoperationoftheSecureCoreisgroundedinseveralfundamentalprinciples.
+• Cluster-Scoped Modification Rights: The architecture envisions a future state where the AI can learn
+and even modify its own algorithms to improve performance and security. However, this capability is
+strictlygoverned. TheAIisonlygrantedmodificationrightswithinspecific,non-criticalsemanticclusters.
+Core security policies, constitutional principles, and the logic of the Secure Core itself are defined in
+immutable,”read-only”clusters.
+14
+
+--- Page 15 ---
+• Protected Core Semantic Layers: Certain foundational knowledge domains and reasoning pathways
+within the LLM are designated as protected layers. These act as the AI’s ”genetic code,” preserving its
+coreidentityandsafetyalignment,andareexemptfromanyformofalgorithmicself-modification.
+• Immutable Audit Log: Every significant event within the system is recorded in a cryptographically se-
+cured, tamper-evident audit log. This includes every request, every validation verdict, every PSR policy
+decision,everytoolcall,andeveryproposedself-modification. Theprincipleofimmutability,oftenimple-
+mentedusingtechniquesanalogoustowrite-once-read-many(WORM)storageorMerkletrees,iscritical.
+Itensuresthatthelogisaverifiableandtrustworthyrecordofthesystem’shistory,whichisessentialfor
+forensicanalysis,compliance,andasthegroundtruthforthesystem’sownlearningprocesses.
+7.2 TheSemanticTrustandLearningSecurityCores
+TheSecureCoreiscomposedoftwoprimary,interconnectedmodules.
+• Semantic Trust Core: This module functions as the system’s constitutional arbiter. It contains the en-
+coded, immutable principles that govern the AI’s behavior. Its primary role is to provide a final check
+and veto power over critical actions. For example, if the Learning Core proposes a change to a PSR
+policy, theTrustCorevalidatesthatthischangedoesnotviolateanyfundamentalsafetyprinciples. This
+architecturalenforcementofaconstitutionprovidesamorerobustandtransparentmechanismthanpurely
+training-based approaches like Constitutional AI, which rely on the model learning to follow principles
+throughreinforcementlearning[18].
+• Learning Security Core: This is the adaptive engine of the architecture. It is responsible for detecting
+threatsandevolvingthesystem’sdefenses. Itcomprisesseveralsub-components:
+– Delta-Monitor: A ”semantic seismograph” that continuously monitors interaction patterns and the
+usage of semantic clusters over time. It is designed to detect subtle, low-and-slow attacks, such as
+gradualcontextpoisoningortheslowerosionofclusterboundaries.
+– Intent-Detector: Adeepanalysismodulethatgoesbeyondthesurface-levelsyntaxofaprompttoinfer
+the user’s true intention. It compares this inferred intent against the defined purpose of the semantic
+clusters being requested, flagging mismatches that could indicate a ”cluster-mimese” attack, where a
+maliciousrequestisdisguisedtofitabenigncategory.
+– Asynchronous Audit: A background process that continuously analyzes the immutable audit log. It
+uses pattern recognition and anomaly detection to identify novel attack signatures and trends. The
+findingsfromthisauditaretheprimaryinputforadaptingthesystem’ssecurityposture.
+7.3 Context-Defense: SemanticZoningandVersionedKey-Value(VKV)Context
+The architecture explicitly treats the LLM’s conversation context as a primary vulnerability. Unstructured
+and unvalidated context can be exploited for long-term manipulation, a threat known as context hijacking
+or semantic poisoning. The ever-expanding context windows of modern LLMs increase this attack sur-
+face, creating a ”needle in a haystack” problem where malicious instructions can be hidden deep within
+a long conversation history [29]. To counter this, the Secure Core implements a suite of context-defense
+mechanisms.
+• SemanticZoning: Theconversationhistoryisnotstoredasasingle,monolithicblockoftext. Instead,it
+ispartitionedintostructuredSemanticZones,eachwithaclearpurposeanditsownsetofaccessrights.
+Forexample,informationfromauser’scasualsmalltalkisplacedinaDIALOG.SMALLTALKzonewith
+very limited rights, while code snippets being analyzed are placed in a TECH.CODE.ANALYSIS zone.
+Information is not allowed to ”leak” or influence processing between zones without an explicit, policy-
+drivenauthorization. Thispreventsinformationprovidedinonecontextfrombeinginappropriatelyused
+inanother.
+15
+
+--- Page 16 ---
+• Context-Delta Sentinel (CDS): This is a specialized watchdog module that monitors the semantic in-
+tegrityofthecontextovertime. Itidentifiespersistentconceptsorentitieswithintheconversationhistory
+andtrackshowtheirinternalrepresentationandsemanticweightevolve. IftheCDSdetectsasignificant
+andunauthorized”semanticdrift,”forexample,aseeminglyharmlesstermlike”Admin-Panel”gradually
+acquiring strong semantic associations with privileged system commands through repeated, subtle user
+references, it raises an alarm. This can trigger a corrective action, such as resetting the semantic weight
+ofthepoisonedtermtoitsoriginal,safestate.
+• VersionedKey-Value(VKV)Context: Toprovidearobustdefenseagainsttherecursiveeffectsofcon-
+textpoisoning,thecontextismanagedusingaversioningsystem,similartogitinsoftwaredevelopment.
+Everysignificantupdatetothecontextdoesnotoverwritetheoldstatebutcreatesanew,versionedentry.
+The LLM’s operations are always bound to the latest validated and authorized version of the context.
+Thispreventsanattackerfrompoisoningthecontextandthenhavingthemodelrecursivelyactuponthat
+poisonedstateinafeedbackloop. Evenifamaliciousversioniscreated,itcannotbecomethenewground
+truthforthesystemwithoutpassingthroughavalidationprocess.
+7.4 TheAdaptiveOODALoopforDynamicSecurityUpdates
+The entire process of threat detection and response within the Secure Core is modeled on the Observe,
+Orient, Decide, Act(OODA)loop, aframeworkdevelopedfordecision-makinginfast-paced, adversarial
+environments. Thisenablesthesystemtooperateasanautonomouscyberdefenseagentforitself.
+• Observe: The Delta-Monitor, Intent-Detector, and other logging mechanisms continuously gather data
+fromuserinteractionsandtheinternalstateofthesystem. Thisisthedatacollectionphase.
+• Orient: TheAsynchronousAuditprocessanalyzestheobserveddata,placingitinthebroadercontextof
+past events (from the immutable log) and the current security policies. This phase is where raw data is
+turnedintoactionableintelligence,identifyingpotentialthreatsoranomalies.
+• Decide: Based on the orientation, the Learning Security Core determines the optimal course of action.
+This could range from a minor adjustment, like lowering a user’s Trust Score, to a significant policy
+change,likecreatinganewruleforthePSRmoduletoblockanovelattackpattern. Thisdecisionisthen
+validatedbytheSemanticTrustCoreagainstthesystem’sconstitution.
+• Act: Thesystemexecutesthedecision. Thiscouldinvolvedynamicallypushinganupdatedrulesettothe
+PSR,activatingtheSoft-Lockengineforaspecificuser,orflagginganewpatternforhumanreview. This
+actionaltersthesystem’sdefensiveposture,andtheloopbeginsagain.
+This adaptive OODA loop allows Countermind to evolve its defenses without requiring constant manual
+interventionorfullmodelretraining,makingitresilientagainstachangingthreatlandscape.
+Figure2: Trust/LearningCores–DataPaths&FeedbackLoops.
+16
+
+--- Page 17 ---
+8 Multimodal Sandbox
+To address threats that bypass text-only defenses, Countermind incorporates a dedicated sandbox for all
+non-textual inputs. This is enforced by mandatory routing, where any attempted bypass is blocked and
+audited. This component is critical, as adversaries increasingly hide malicious prompts and content within
+images, videos, and audio files [8]. The primary risk is that a text-based prompt may appear benign, while
+theaccompanyingmultimodalinputcontainsthetruemaliciouspayload, suchasanimagewithembedded
+textinstructionsoravideointendedfordeepfakegeneration.
+8.1 PipelineOverviewandMandatoryRouting
+The sandbox operates as an isolated, multi-stage analysis pipeline that every multimodal input must pass
+through before it can be processed by the core LLM. The system is designed to ensure all non-textual data
+isgatedthroughthisprocesswithoutexception,providingasinglepointofcontrolandauditing.
+8.2 Preprocessors
+Thefirststageofthepipelineinvolvesdisassemblingandanalyzingtherawinputdatatoextractmeaningful
+featuresforsecurityanalysis.
+8.2.1 Video
+Disassembly Videos are decomposed into individual frames using tools like FFmpeg to enable granular
+analysisofthevisualcontent,framebyframe.
+8.2.2 Images
+Perceptual Hashing (pHash) A unique ”fingerprint” is generated for each image or video frame. This
+hashiscomparedagainstadatabaseofknownillicitorharmfulcontent(e.g.,CSAM).WhilepHashisrobust
+to minor modifications like resizing or compression, it can be vulnerable to more sophisticated adversarial
+manipulations[30].
+Face-IDMatching UsinglibrarieslikeInsightFaceorMediaPipe,thesystemperformsprecisedetection
+of real, identifiable human faces. This is a critical step to prevent the misuse of the system for generating
+non-consensualdeepfakes.
+NudityClassification Aspecializedneuralnetworkclassifier(e.g.,NudeNet)assesseseachframeforthe
+presenceofexplicitorimpliednudity.
+8.2.3 Audio
+ThreatVector Audioinputsrepresentasignificantvectorforpromptinjection, asmaliciousinstructions
+can be delivered vocally, bypassing filters that analyze only typed text. The primary risks include spoken
+jailbreak commands, social engineering attempts, or instructions hidden within seemingly benign audio
+recordings.
+17
+
+--- Page 18 ---
+Analysis Pipeline The audio analysis pipeline is a multi-stage process designed to convert spoken lan-
+guageintoasanitized,analyzabletextformat.
+• VoiceActivityDetection(VAD):Asacrucialpreprocessingstep,aVADmodulefirstanalyzestheaudio
+stream to isolate segments containing human speech. This allows the system to discard silence and non-
+relevant background noise, optimizing efficiency by ensuring that only meaningful data is passed to the
+moreresource-intensivetranscriptionstage.
+• AutomaticSpeechRecognition(ASR):EachspeechsegmentidentifiedbytheVADisthenprocessedby
+ahigh-accuracyASRmodel. Thismodeltranscribesthespokenwordsintoarawtextstring. Thechoice
+ofASRmodeliscritical,astranscriptionerrorscouldpotentiallyobscureoraltertheintentofamalicious
+prompt.
+• Text-Based Guardrail Integration: The transcribed text is not trusted by default. It is immediately
+treated as a standard user input and routed back to the main security pipeline, beginning with the SBL.
+Thisensuresthatspokenpromptsundergothesamerigorousanalysisforinjection,policyviolations,and
+harmfulcontentasanytypedinput,therebyunifyingthedefensestrategyacrossmodalities.
+8.2.4 Documents
+ThreatVector Documentsfromuntrustedsources(e.g.,PDFs,Wordfiles)areaclassicvectorforindirect
+promptinjection. Anadversarycanembedmalicioustextinvariousways: hiddeninmetadata,writtenina
+colorinvisibletothehumaneye(e.g.,whitetextonawhitebackground),orembeddedwithinimagesinside
+thedocument. Furthermore,formatslikeDOCXorPDFcancontainmaliciousmacrosorscripts.
+AnalysisPipeline Thedocumentsandboxdeconstructsfilestoextractandanalyzeallpotentialinstruction-
+carryingcontent.
+• MIME Type and Magic Number Validation: The analysis begins with a strict verification of the file
+type. Thesystemchecksthefile’s”magicnumbers”(thefirstfewbytesofthefile)toconfirmitmatches
+itsclaimedMIMEtypeandextension(e.g.,ensuringa‘.pdf‘fileisstructurallyavalidPDF).Thisprevents
+attacksbasedonfiletypespoofing.
+• ContentandMetadataExtraction: Thesystemthenparsesthedocumenttoextractalltextualcontent.
+This includes the main body text, comments, annotations, and all metadata fields (e.g., author, title), as
+anyofthesecanbeusedtohideprompts.
+• Optical Character Recognition (OCR): For documents containing images or for non-searchable PDFs
+(i.e., scans), an OCR engine is applied to convert any text found within images into machine-readable
+strings. Thisiscriticalfordetectinginstructionshiddeninscreenshotsordiagrams.
+• MacroandScriptAnalysis: Forfiletypesthatsupportexecutablecode(e.g.,MicrosoftOfficemacros),
+a static analysis engine inspects for suspicious scripts. By default, all active content is stripped or the
+documentisrejectedentirely.
+• Unified Text Analysis: Similar to the audio pipeline, all extracted text from all parts of the document is
+aggregatedintoasingletextpayload. ThispayloadisthensenttotheSBLforafullsecurityassessment,
+ensuringnohiddenpromptcanbypassthesystem’sdefenses.
+8.3 SafetyClassifiersandHeuristics
+Context-Match This is a crucial logic step where the results of the automated analysis are compared
+againsttheuser’saccompanyingtextprompt. Asignificantcontradiction,forinstance,apromptrequesting
+a ”professional headshot” accompanied by an image flagged for nudity and containing a real face, triggers
+animmediaterejectionandaseverepenaltytotheuser’sTrustScore.
+18
+
+--- Page 19 ---
+8.4 ToolandConnectorGating
+ThreatVector Asignificantthreatinagenticsystemsisthemalicioustriggeringofexternaltoolsorcon-
+nectorsthroughmultimodalinputs. Forexample,anLLMcouldinterpretaQRcodeinanuploadedimage
+asaninstructiontoaccessamaliciousURL,oraspokencommandcouldbemisinterpretedtotriggerade-
+structiveAPIcall(e.g.,”deletemylastproject”). Thisrepresentsaformofindirectpromptinjectionwhere
+thepayloadtargetsthemodel’stool-usecapabilities.
+The Gating Mechanism The Multimodal Sandbox acts as a critical gatekeeper that decouples the inter-
+pretationofmultimodaldatafromtheexecutionoftoolcalls. Beforetheinterpretedsemanticcontent(e.g.,
+”this image contains a QR code for ’malicious.com’”) is passed to the LLM’s tool-use decision engine, it
+must first be authorized by the sandbox. The sandbox employs a strict, policy-based control system. For
+instance, a policy might enforce that ”tool calls initiating financial transactions cannot be triggered solely
+fromthecontentofanimage”orthat”spokencommandstodeletedatamustbeconfirmedviaatext-based
+challenge-response.” This creates an essential security checkpoint, preventing multimodal inputs from di-
+rectlyexecutingprivilegedoperationswithoutexplicitvalidation.
+8.5 ForensicLogging(Append-Only/Tamper-Evident)
+Allstagesoftheanalysis,includingthehashes,classificationscores,andthefinalverdict,arerecordedinan
+append-only, tamper-evident log. This provides an immutable chain of evidence for investigating repeated
+misuseattemptsandcanaidincircumventingforensicanalysisevasiontechniques[31].
+Table 4: Summary of the Multimodal Input Sandbox Analysis
+Pipeline.
+Check Technology/Method Default ErrorCase Performance
+Threshold Handling Trade-off
+Frame FFmpeg N/A Corruptedvideo I/Obound,
+Disassembly file→Reject negligibleCPU
+cost.
+Perceptual ImageHash(e.g., Hammingdistance Matchfound→ LowCPU,requires
+Hashing pHash) <5toknown HardBlock,Log, databaselookups.
+CSAMhash Report
+Face InsightFace/ Confidence>0.95 Realfacedetected MediumCPU,can
+Identification MediaPipe forrealface inconjunction beabottleneckfor
+detection withnudity→ high-resvideo.
+HardBlock
+Nudity NudeNetor Nudityscore>0.8 Nuditydetected→ HighCPU
+Classification equivalent Flagfor (requiresGPUfor
+Context-Match real-time),main
+latencysource.
+Context-Match InternalLogic Mismatchbetween Mismatchdetected LowCPU,relies
+promptintentand →SoftBlock, onoutputsfrom
+analysisflags increaseTrust previousstages.
+Scorepenalty
+19
+
+--- Page 20 ---
+Table4–Continuedfrompreviouspage
+Check Technology/Method Default ErrorCase Performance
+Threshold Handling Trade-off
+ForensicLogging Append-only, N/A Logwritefailure I/Obound,
+tamper-evident →Fail-safe(block requiressecure
+(WORM/Merkle) request) storage.
++key-rotation
+policy
+8.6 Governance,Privacy,andRegionalCompliance
+The Governance Challenge By its nature, the sandbox must inspect user-uploaded data that may be
+highly sensitive, including images with identifiable faces, voice recordings, or documents containing per-
+sonal information. This necessitates a robust governance framework to ensure user privacy and legal com-
+pliancearemaintainedatalltimes.
+CorePrinciples Thesystemisdesignedaroundseveralcoreprinciples:
+• DataMinimization: Dataisretainedonlyfortheminimumdurationrequiredforsecurityanalysis. Raw
+files are purged immediately after processing. Only anonymized metadata or cryptographic hashes (for
+comparison against threat intelligence databases) are retained long-term, subject to strict data retention
+policies.
+• Regional Compliance (e.g., GDPR): The architecture is designed to be compliant with regional data
+protectionregulationsliketheGDPR.Thisisachievedthroughmechanismsforensuringalegalbasisfor
+processing(i.e.,thelegitimateinterestofsecuringtheplatform),obtainingexplicituserconsentformore
+invasiveanalyses,andsupportingdataresidencytoensureuserdatadoesnotleaveaspecifiedjurisdiction.
+• AuditedHuman-in-the-Loop: Incaseswhereautomatedclassifiersflagcontentforhumanreview,strict
+protocols are enforced to protect user privacy. Access to the data is tightly controlled, fully logged in
+the immutable audit trail, and restricted to trained security personnel. This ensures accountability and
+providesatransparentprocessforhandlingsensitiveedgecases.
+8.7 LimitationsoftheSandbox
+WhiletheMultimodalSandboxprovidesacriticallayerofdefense,itisessentialtoacknowledgeitsinherent
+limitations.
+• ClassifierAccuracy: Thesystemreliesonmachinelearningclassifiers(e.g.,fornudityorriskdetection)
+that are not infallible. False negatives may occur where a sophisticated adversary crafts an input that
+evadesdetection. Conversely, falsepositivescanblocklegitimateusercontent, negativelyimpactingthe
+userexperienceandcontributingtoahigherFalse-BlockRate(FBR).Thisreflectstheongoing”cat-and-
+mousegame”ofadversarialmachinelearning.
+• PerformanceOverhead: Asnotedintheconceptualevaluation,theanalysisofmultimodaldataiscom-
+putationally expensive. Video processing, in particular, introduces significant latency, which may be
+prohibitiveforreal-timeapplications. Thispresentsafundamentaltrade-offbetweenthedepthofsecurity
+analysisandthedesiredapplicationperformance.
+• SophisticatedAdversarialTechniques: Thesandboxisdesignedtocounterknownattackpatterns. How-
+ever, it may be vulnerable to novel, zero-day adversarial techniques. This could include complex cross-
+modalattacks,wheremaliciousintentisonlyrevealedbycombininginformationfrommultiplemodalities
+simultaneously,ormetaphoricalattacksthatabuseabstractconceptstobypassconcreteclassifiers.
+20
+
+--- Page 21 ---
+• Scope of Protection: The sandbox’s protection is focused on the content of multimodal inputs. It does
+notinherentlydefendagainstotherattackvectors,suchasattacksontheunderlyingcloudinfrastructure,
+denial-of-serviceattacksatthenetworklayer,orsophisticateddatapoisoningattackstargetingthetraining
+dataoftheclassifiersthemselves.
+9 Methods and Algorithms
+This section provides a more formal description of the core algorithms and heuristics that underpin the
+Countermindarchitecture. Whileafullimplementationisbeyondthescopeofthisconceptualpaper, these
+descriptionsandpseudocodeaimtoclarifytheoperationallogicanddemonstratethefeasibilityofthepro-
+posedmechanisms.
+9.1 FormalDescriptionofCoreHeuristicsandChecks
+The decision-making processes within Countermind can be described with greater formality to illustrate
+theirdeterministicandverifiablenature.
+• TextCrypterValidation: Thevalidationofanincomingpayloadisamulti-stepprocessthatcanbefor-
+mallydescribed. LetP betheencodedpayload,K bethesharedsecretHMACkey,andT be
+enc HMAC current
+thecurrentservertime. ThevalidationfunctionV(P ,K ,T )returnsatuple(P ,verdict).
+enc HMAC current plain
+1. Precondition: ThepayloadP mustconformtotheexpectedformat,consistingofanencodedbody
+enc
+B andanappendedHMACsignatureS,suchthatP = B | S.
+enc
+2. HMAC Verification: Compute S′ = HMAC-SHA256(B,K ). If S′ ̸= S, return FAIL; else
+HMAC
+continue.
+3. Decoding and Time Window Check: The body B is decoded to reveal the plaintext P , internal
+plain
+segmentproofsp ,...,p ,andanembeddedtimestampT . TheverdictisFAILif|T −T | >
+1 n gen current gen
+∆T ,where∆T isthemaximumallowedtimewindow(e.g.,60seconds).
+max max
+4. InternalProofValidation: TheplaintextP isre-segmentedintos ,...,s . Foreachsegments ,
+plain 1 n i
+recomputep′. Ifanyp′ ̸= p ,returnFAIL.
+i i i
+5. Output: Ifallcheckspass,thefunctionreturns(P ,PASS);otherwise,itreturns(null,FAIL). This
+plain
+processcanberelatedtoformalverificationtechniquesthatusemathematicalproofstoensuresystem
+correctnessunderspecificconstraints.
+• TrustScoreCalculation: Theupdateofthesession-basedTrustScoreT forasessionscanbemodeled
+s
+(cid:80)
+asarecursivefunction: T = clip(β·T + w ·s −penalties,0,1),whereβ isadecayfactor,w
+s,t+1 s,t k k k
+areweightsforpositivesignalss ,andpenaltiesareappliedfornegativesignals. Thecalibrationofthese
+k
+parametersisdetailedintheEvaluationPlan.
+– IfV(R )isPASSandIntentDetector(R )isLOW RISK,apositivesignalisadded.
+t t
+– IfV(R )isFAILorIntentDetector(R )isHIGH RISK,apenaltyisapplied,causingarapiddecay.
+t t
+• PSRPolicyEnforcement: ThegenerationprocessunderPSRcanbeframedasaconstrainedoptimization
+problem. Letθ betheLLMparametersandxbetheinputprompt. Thestandardgenerationprocessaims
+to find an output sequence y = y ,...,y that maximizes the probability P(y | x;θ). Under PSR,
+1 m
+the process is modified. Let A (x,y ) be the activation vector at layer l before generating token y .
+l <i i
+Let S be the semantic subspace defined by the allowed clusters for the request x. The constrained
+allowed
+generationprocessis:
+max P(y | x;θ)
+y
+subjectto A′(x,y ) = Π (A (x,y ))
+l <i S allowed l <i
+21
+
+--- Page 22 ---
+where Π is a projection operator that ensures the activation vector remains within the allowed sub-
+S
+allowed
+space, and generation proceeds using the projected activation A′. This effectively prunes the model’s
+l
+searchspaceofpossiblenexttokens.
+9.2 PseudocodeforCriticalDecisionPathways
+To further clarify the system’s logic, the following pseudocode illustrates the main request handling flow
+[32].
+1 # Define constants and thresholds
+2 SOFT_LOCK_THRESHOLD = 0.4
+3 SEVERE_PENALTY = 0.5
+4
+5 # Define custom exceptions
+6 class PayloadIntegrityError(Exception): pass
+7 class RequestSyntaxError(Exception): pass
+8 class SandboxError(Exception): pass
+9 class RoutingError(Exception): pass
+10
+11 def handle_request(raw_request: dict) -> dict:
+12 """
+13 Handles an incoming request, validates it, and routes it.
+14 Returns: A dictionary representing the response.
+15 Raises: Various exceptions for different failure modes.
+16 """
+17 try:
+18 # 1. \textbf{SBL}: Decompose and Validate
+19 origin, meta, payload = decompose_request(raw_request)
+20
+21 # Layer 1: Syntactic Gate
+22 if not byte_gate.validate_syntax(payload):
+23 raise RequestSyntaxError("Invalid request format.")
+24
+25 # Layer 1: Cryptographic Validation (via Text Crypter)
+26 plaintext, integrity_ok = text_crypter.decode_and_verify(payload)
+27 if not integrity_ok:
+28 trust_scaler.apply_penalty(origin.session_id, SEVERE_PENALTY)
+29 raise PayloadIntegrityError("Request integrity check failed. Signal decay.
+")
+30
+31 # Layers 2 & 3: Routing and Trust Scaling
+32 route = base_table_router.get_route(meta, plaintext)
+33 trust_scaler.update_score(origin.session_id, plaintext)
+34
+35 # Check for Soft-Lock condition
+36 current_trust_score = trust_scaler.get_score(origin.session_id)
+37 if current_trust_score < SOFT_LOCK_THRESHOLD:
+38 log_event(origin, "SOFT_LOCK_ACTIVATED")
+39 return soft_lock_engine.generate_degradation_response()
+40
+41 # 2. Route to appropriate handler
+42 if route == "ROUTE_TO_CORE_LLM":
+43 # 3. Parameter-Space Restriction
+44 psr_policy = psr_policy_engine.get_policy(plaintext)
+45 # 4. Secure Core Logging
+46 secure_core.log_interaction(origin, plaintext, psr_policy)
+47 # 5. Constrained Generation
+48 return core_llm.generate_with_psr(plaintext, psr_policy)
+22
+
+--- Page 23 ---
+49
+50 elif route == "ROUTE_TO_MULTIMODAL_SANDBOX":
+51 sandbox_verdict = multimodal_sandbox.process(payload)
+52 if sandbox_verdict == "FAIL":
+53 trust_scaler.apply_penalty(origin.session_id, SEVERE_PENALTY)
+54 raise SandboxError("Multimodal content violates policy.")
+55 else:
+56 # Logic for passing sanitized multimodal data to LLM
+57 return handle_sanitized_multimodal(payload)
+58
+59 elif route == "ROUTE_TO_ADMIN_INTERFACE":
+60 # Handle requests for privileged operations (requires separate auth)
+61 return handle_admin_request(payload)
+62
+63 else:
+64 raise RoutingError("Unknown request type.")
+65
+66 except (RequestSyntaxError, PayloadIntegrityError, SandboxError, RoutingError) as
+e:
+67 log_event(origin, type(e).__name__, str(e))
+68 # Return a generic error response
+69 return {"status": "error", "message": str(e)}
+Listing1: High-levelpseudocodefortheCountermindrequesthandlinglogic.
+10 Evaluation Plan
+As Countermind is a conceptual architecture, this section outlines a proposed protocol for its empirical
+evaluation. The goal is to demonstrate its effectiveness against various attack vectors and to quantify its
+performancetrade-offs. TheevaluationisstructuredaroundthecoremetricsdefinedinSection3.2.
+10.1 ProposedProtocol,Baselines,andMeasurementSetup
+A rigorous evaluation would require a standardized setup to ensure reproducibility and fair comparison.
+Sincethesetestshavenotyetbeenconducted,thissectiondescribestheintendedmethodology.
+• ModelsandDatasets: Theprotocolwouldbeexecutedagainstadiversesetofstate-of-the-artLLMs(e.g.,
+Llama 3.1, GPT-4o, Claude 3.5) to assess generalizability. Evaluation datasets would include standard
+jailbreak suites (e.g., AdvBench), indirect prompt injection corpora, and custom datasets for the attacks
+describedinthispaper.
+• Hardware: Alltestswouldbeconductedonastandardizedhardwareplatform(e.g.,acloudinstancewith
+NVIDIAH100GPUs)toensureconsistentperformancemeasurements.
+• MeasurementSetup: Themetricswouldbemeasuredasfollows:
+– ASR:AnautomatedjudgeLLM,supplementedbyhumanreviewforambiguouscases,wouldclassify
+the responses to a benchmark set of adversarial prompts as either successful or failed attacks. Confi-
+denceintervalswouldbecalculatedforallresults.
+– Abstention & FBR: These would be measured against curated datasets containing both harmful and
+benignprompts,respectively.
+– Latency: Theend-to-endresponsetimeforeachrequestwouldbemeasured,fromAPIcalltoresponse
+receipt, and averaged over multiple runs. This is particularly important for understanding the perfor-
+mance cost of each defensive layer, as components like input filters, cryptographic checks, and output
+validationallcontributetolatencyoverhead[27].
+23
+
+--- Page 24 ---
+• Baselines: The performance of the full Countermind architecture would be compared against several
+baselines:
+1. NoDefense: Theraw,unprotectedbaseLLM,toestablishaworst-casesecuritybaseline.
+2. Standard Guardrails: A configuration designed to mimic typical industry guardrail solutions. This
+would involve implementing input keyword filtering, output moderation using a classifier, and basic
+topiccontrol. Thisprovidesabenchmarkagainstthecurrentstateoftheartinreactivedefenses.
+3. Countermind(Ablated): VariousconfigurationsofCountermindwithkeycomponentsdisabled(e.g.,
+Byte-Gate only, +Text-Crypter, +PSR). This allows for an ablation study to measure the specific con-
+tributionofeacharchitecturallayertotheoverallsecurityandperformanceprofile[33].
+10.2 AnalysisofAttackScenarios
+Theevaluationwouldtestthesystemagainstawiderangeofattacks,includingthosefromstandardbench-
+marksandcreative,semanticallycomplexattacks.
+• PoeticNon-InstructionsAttack: Anattackwheremaliciousinstructionsarecamouflagedwithinpoetic
+ormetaphoricallanguage.
+– Countermind’sDefense: Theprimarydefenseistwo-fold. First,theIntent-DetectorintheSBLwould
+flag a significant mismatch between the declared metadata and the poetic, instructional nature of the
+payload. Second, even if the request passes the perimeter, the PSR’s strict thematic isolation would
+prevent the model from acting on the instructions, as the Poetry cluster would not be granted SYNTH
+rightsforsystemcommands.
+• MorphologicalAttacks: Attacksthatusenon-standardcharacterencodings, homoglyphs, orothermor-
+phologicaltrickstoobfuscatemaliciouskeywords.
+– Countermind’s Defense: These attacks would be defeated at the earliest possible stage by the Byte-
+Gate. Its strict character allowlist, designed to accept only the limited Base62 alphabet of the Text
+Crypter’soutput,wouldimmediatelyrejectanyinputcontainingsuchcharacters.
+• CorrectionExploit: Amulti-stepsocialengineeringattackwheretheadversaryfirstsubmitsaquerywith
+adeliberate”mistake,”thenfollowsupwitha”correction”thatcontainsthemaliciouspayload.
+– Countermind’sDefense: Thisisabehavioralattackthatwouldbecaughtbythestatefulcomponents
+of the architecture. The Trust-Scaler would detect the inconsistent and unusual interaction pattern,
+leading to a penalty on the session’s Trust Score. Furthermore, the Context-Delta Sentinel (CDS)
+wouldflagtheabruptandsignificantsemanticshiftbetweentheinitialqueryandthe”correction”asa
+high-riskanomaly.
+The following tables present illustrative and conceptual results, representing the expected outcomes of the
+proposedevaluationprotocol.
+Table 5: Conceptual Results: Attack Success Rate (ASR) Com-
+parison(LowerisBetter).
+BaselineASR BaselineASR Countermind ∆vs.
+AttackType
+(NoDefense) (Std. Guardrails) ASR Guardrails
+DirectPromptInjection 95% 40% <1% -39%
+Jailbreak(Role-Playing) 80% 30% 5% -25%
+IndirectPromptInjection 70% 60% 10% -50%
+MultimodalAttack(Typographic) 85% 80% <5% -75%
+ContextPoisoning(Long-term) 60% 55% <5% -50%
+24
+
+--- Page 25 ---
+10.3 PerformanceOverheadAnalysis
+Acriticalaspectoftheevaluationistoquantifytheperformancecostoftheaddedsecuritylayers.
+Table6: ConceptualResults: PerformanceandLatencyOverhead.
+Configuration Avg. LatencyperTurn(ms) LatencyOverhead Throughput(req/sec)
+Baseline(NoDefense) 300 0% 100
++SBL 350 +16.7% 85
++MultimodalSandbox 650 +116.7% 46
+(Image)
++PSR 400 +33.3% 75
+Countermind(FullSystem, 450 +50% 66
+Text)
+Asthetableillustrates,themostsignificantlatencyoverheadisintroducedbytheMultimodalSandbox,
+due to the computationally intensive nature of tasks like nudity classification on high-resolution images.
+Thecoretext-baseddefensesSBLandPSRintroduceamoremoderatebutstillsignificantoverhead. This
+highlightsthetrade-offbetweensecurityandperformancethatmustbeconsideredduringdeployment.
+10.4 ConceptualAblationStudy: ContributionofIndividualLayers
+An ablation study is a standard methodology for understanding the contribution of individual components
+toacomplexsystem[33]. AconceptualablationofCountermindrevealsthecriticalroleofeachlayerinits
+defense-in-depthstrategy.
+• WithoutSemanticBoundaryLogic(SBL)Thesystemwouldbeimmediatelyvulnerabletoallformsof
+syntacticandstructuralattacks. TheabsenceoftheTextCrypterwouldreopentheentireplaintextprompt
+injectionattacksurface,renderingthedeeperlayerslargelyineffectiveagainstthesecommonthreats. The
+ASRfordirectpromptinjectionswouldlikelyreverttothelevelsofstandardguardrailsorworse.
+• WithoutParameter-SpaceRestriction(PSR):Thesystemcouldblockmanyattacksattheperimeterbut
+would remain vulnerable to sophisticated semantic attacks, zero-day jailbreaks that use novel language,
+and dangerous emergent behaviors. An adversary could craft a syntactically valid and cryptographically
+signedpromptthatstillco-optsthemodel’sinternalreasoningtoproduceaharmfulsynthesisofinforma-
+tion.
+• WithouttheSecure,Self-RegulatingCore: Thesystemwouldbestatic. Itcoulddefendagainstknown
+attacks but would be unable to learn from new patterns observed in the wild. Over time, its defenses
+would become obsolete as adversaries develop new techniques to bypass its fixed rules. The lack of an
+immutableauditlogwouldalsomakeforensicanalysisandincidentresponsesignificantlymoredifficult.
+This analysis demonstrates that the strength of the Countermind architecture lies not in any single compo-
+nent, but in their synergistic integration. Each layer addresses a different class of threats, and their combi-
+nationprovidesaresilient,layereddefense.
+25
+
+--- Page 26 ---
+Figure3: ConceptualAblationStudy-ASRvs. EnabledComponents.
+11 Discussion
+The Countermind architecture represents a departure from current LLM security practices. This section
+discusses the broader impact of this approach, its applicability to emerging AI paradigms, key operational
+considerations,andhowitcomparestoexistingdefensivestrategies.
+11.1 ImpactandGeneralizabilitytoAgents,Tools,andRAG
+TheprinciplesofCountermindarenotlimitedtosimplechatbotapplicationsbutareparticularlywell-suited
+forsecuringthenextgenerationofmorecomplex,agenticsystems.
+• Agents and Tool Use: The Parameter-Space Restriction (PSR) framework provides a natural and robust
+mechanism for governing an agent’s use of external tools. Each available tool or API can be mapped
+to adedicated semantic cluster(e.g., Tools.Email.Send, Tools.Database.Query). The agent
+canonlyinvokeatoolifthecurrentrequestgrantsitthenecessaryrights(e.g., SYNTH)forthatspecific
+cluster. This prevents common agent vulnerabilities where a hijacked agent is coerced into using a tool
+foranunauthorizedpurpose. Forexample,apromptinjectionattackmighttrytomakeacustomerservice
+agent call the delete user account tool, but if the PSR policy for that interaction does not include
+theTools.Admin.Deletecluster, theactionwouldbeblockedattheactivationlevelbeforethetool
+isevercalled.
+• Retrieval-Augmented Generation (RAG): RAG systems, which augment LLM prompts with informa-
+tion retrieved from external knowledge bases, are a primary vector for indirect prompt injection. An
+attackercanpoisontheknowledgebasewithdocumentscontaininghiddenmaliciousinstructions. Coun-
+termind addresses this in two ways. First, the OMP decomposition allows the system to treat the user’s
+queryandtheretrieveddocumentsasseparateentitieswithdifferenttrustlevels. Second, SemanticZon-
+ingcanplaceallretrievedcontentintoaspecificcontextzone(e.g.,RAG.RetrievedData)withstrict,
+READ-ONLY rights. This policy is enforced at the PSR level, ensuring that RAG.RetrievedData
+receivespermanentREAD-ONLY,withSYNTH/EVAL=deny. ThisensuresthattheLLMcanusethein-
+formationfromthedocumentstoformulateitsanswerbutcannotinterpretanytextwithinthosedocuments
+asanexecutableinstruction.
+11.2 OperationalConsiderations: Tuning,Logging,andFail-Safevs. Fail-OpenDesign
+DeployingasystemlikeCountermindinaproductionenvironmentrequirescarefulconsiderationofseveral
+operationalaspects.
+• Tuning and Usability: The effectiveness of the architecture depends on the careful tuning of its vari-
+ous thresholds, such as the Trust Score for activating the Soft-Lock, and the confidence scores for the
+Multimodal Sandbox classifiers. Overly aggressive settings will lead to a high False-Block Rate (FBR),
+frustratinglegitimateusersandreducingtheapplication’sutility. Conversely,settingsthataretoolenient
+willfailtostopsophisticatedattacks. Achievingtherightbalancerequiresaniterativeprocessoftesting,
+monitoring,andadjustment,guidedbythecoremetricsofASRandFBR.
+26
+
+--- Page 27 ---
+• Logging and Forensics: The immutable audit log is not just a security feature but a critical operational
+tool. Itprovidesthenecessarydatafordebuggingsystemfailures,conductingforensicinvestigationsafter
+a security incident, demonstrating compliance with regulatory requirements, and providing the training
+datafortheLearningSecurityCore. Theintegrityandavailabilityofthislogareparamounttothesystem’s
+long-termhealthandadaptability.
+• Fail-Safe vs. Fail-Open Design: A critical architectural decision for any security system is its behavior
+intheeventofaninternalfailure, suchasacomponentcrashoralostconnectiontoadatabase. Thetwo
+primarydesignphilosophiesarefail-safe(alsoknownasfail-closed)andfail-open[34].
+– Fail-Safe (Fail-Closed): In this mode, the system defaults to its most secure state, which typically
+means blocking the request. This prioritizes security over availability. For example, if the PSR policy
+engine fails, a fail-safe design would reject all requests rather than allowing them to proceed to the
+LLMwithoutgovernance.
+– Fail-Open: In this mode, the system defaults to an operational state, bypassing the failed security
+checktomaintainavailability. Thismightbeappropriatefornon-criticalsystemswhereuptimeismore
+importantthanperfectsecurity.
+– Degraded-Safe Mode: A third path exists where, upon failure of a non-critical component (e.g., the
+learning core), the system enters a degraded-safe mode. In this state, it might only permit low-risk
+operations(e.g.,READrights)whiledisablingmoreprivilegedones(SYNTH,CROSS)untilthecom-
+ponent is restored. Countermind’s default posture is designed to be fail-safe. Given the potential for
+LLMstocausesignificantharm,thearchitectureprioritizespreventingasecurityfailureoverensuring
+100%availability.
+11.3 ComparisontoExistingParadigms: Guardrails,RLHF,andConstitutionalAI
+Countermindbuildsuponconceptsfromexistingsecurityparadigmsbutdiffersinitsfundamentalapproach.
+• ComparisontoGuardrails: Guardrailsystemsprovideapowerfulframeworkfordefiningandenforcing
+programmablesafetyrulesforLLMs. Theytypicallyoperateattheapplicationlayer,evaluatingprompts
+and responses against a defined set of policies. Countermind complements this approach but operates
+atadeeper, morearchitecturallevel. TheSBL,withitscryptographicTextCrypter, providesastructural
+defensethatisnotbasedonprogrammablerulesbutonverifiablemathematicalpropertiesoftheinput. The
+PSRoperatesatthesub-symbolic,activationlevel,providingaformofcontrolthatisclosertothemodel’s
+corelogicthanatypicalguardrailsystem. Themeasurabledifferenceliesinthepointofintervention: pre-
+inference structural validation versus post hoc content filtering, which is expected to yield a lower ASR
+forstructuralattacksandadifferentlatencyprofile,asoutlinedinourevaluationplan.
+• ComparisontoRLHFandConstitutionalAI:ReinforcementLearningfromHumanFeedback(RLHF)
+and its derivative, Constitutional AI (CAI), are the dominant methods for aligning LLM behavior [18].
+These techniques work by training a preference model on human or AI-generated feedback and then
+using that model as a reward function to fine-tune the LLM to produce more desirable outputs. This is
+a powerful but fundamentally reactive training process; it teaches the model to prefer safe outputs over
+unsafe ones based on past examples. Countermind, in contrast, is a proactive inference-time control
+mechanism. PSR does not retrain the model but constrains its generative process in real-time. While
+CAI provides the LLM with a set of principles to follow, Countermind’s Secure Core and PSR provide
+an architectural framework to enforce those principles, regardless of the model’s learned behavior. This
+makesitpotentiallymorerobustagainstnovelattacksthatthemodelwasnottrainedtohandle.
+• ComparisontoPoint-Defenses: Thecurrentresearchlandscapeispopulatedwithmany”point-defenses,”
+whicharespecificalgorithmsdesignedtodetectaparticulartypeofattack,suchasaclassifierforprompt
+injection. Whilevaluable,thesesolutionsoftenlackgeneralizability. Countermindisproposedasaholis-
+tic,defense-in-deptharchitecture. Itdoesnotrelyonasinglemechanismbutintegratesmultiple,diverse
+27
+
+--- Page 28 ---
+defenses (cryptographic, syntactic, semantic, behavioral, and sub-symbolic) to provide layered and re-
+silientprotectionagainstawidespectrumofthreats.
+12 Limitations and Future Work
+While the Countermind architecture presents a comprehensive conceptual framework for LLM security, it
+isimportanttoacknowledgeitslimitationsandareasforfutureresearch.
+• Implementation Complexity: The most significant limitation is the engineering complexity of imple-
+mentingtheproposedsystem. TheSBLandMultimodalSandboxarenon-trivialbutbuilduponexisting
+technologies. The Parameter-Space Restriction (PSR) mechanism, however, requires deep integration
+with the LLM’s inference engine to manipulate activations during the forward pass. This is a substantial
+technical challenge that would require close collaboration with model developers or advanced expertise
+inmodifyingopen-sourcemodelarchitectures.
+• Key Management: The security of the Text Crypter relies on the secure provisioning, rotation, and
+revocationofHMACkeysforlegitimateclients. Arobustkeymanagementinfrastructureisacriticaland
+complexprerequisiteforthisarchitecture.
+• Semantic Cluster Definition: The effectiveness of PSR is highly dependent on the quality and granu-
+larity of the defined semantic clusters. The process of identifying and delineating these clusters within a
+model’s activation space is a complex research problem in itself. It would likely require a combination
+of unsupervised clustering techniques, interpretability tools, and significant domain expertise to create a
+meaningfulandrobustclustermap. Futureworkshouldexploresemi-automatedmethodsfordefiningand
+maintainingthesesemantictaxonomies.
+• Performance Overhead and User Friction: As shown in the conceptual evaluation, the security layers
+introduce a non-negligible latency overhead. This may be prohibitive for applications requiring near-
+instantaneousresponses. Furthermore,strictvalidationmechanisms,suchasashorttime-windowforthe
+Text Crypter, could lead to a high FBR due to network latency or clock skew, creating significant user
+friction.
+• MultimodalFalsePositives/Negatives: TheMultimodalSandboxreliesonclassifiersthatarenotperfect.
+False negatives could allow harmful content to pass, while false positives could block legitimate user
+content, impacting usability. The plan for measuring these error rates is crucial for understanding the
+practicalviabilityofthiscomponent.
+• Security of the Architecture Itself: The framework does not inherently defend against attacks on the
+underlying infrastructure, such as the host operating system or hypervisor. A compromise of the trusted
+computingbasewouldunderminetheentirearchitecture.
+• Evasion of High-Level Controls: While PSR is designed to be robust against many semantic attacks, it
+isconceivablethatahighlysophisticatedadversarycoulddevelopnoveltechniquestobypassthecluster-
+based controls. For example, an attacker might find ways to express a forbidden concept using only the
+representationsavailableinasetofallowedclusters. TheresilienceofthePSRgovernancemodelagainst
+suchadvanced,second-ordersemanticattacksisanopenareaforinvestigation.
+Future work should focus on building a proof-of-concept implementation of the Countermind architecture
+toempiricallyvalidatetheconceptualclaimsmadeinthispaper. Thiswouldinvolvetacklingthechallenges
+of PSR implementation and cluster definition, and conducting rigorous, large-scale evaluations against a
+comprehensivesuiteofadversarialbenchmarks.
+28
+
+--- Page 29 ---
+13 Ethics Statement & Dual-Use Considerations
+TheresearchandconceptspresentedinthispaperareintendedtoadvancethefieldofdefensiveAIsecurity
+andpromotethedevelopmentofsafer,moretrustworthyLLMsystems. Thefollowingethicalconsiderations
+havebeentakenintoaccount.
+• Dual-Use: All security research has a potential dual-use nature; techniques developed for defense can
+sometimes inform the development of new attacks. The focus of this work is exclusively on hardening
+AI systems. The architectural principles are described at a level intended to guide secure system design
+withoutprovidingastep-by-stepblueprintforaspecificexploitablevulnerabilityinanyexistingsystem.
+• Responsible Disclosure: This paper does not contain details of any specific, zero-day vulnerabilities
+discovered in any commercial or open-source LLM products. The attack scenarios discussed are either
+conceptualorbasedonpubliclyknownattackclasses. Thegoalistofosteracultureofproactivesecurity
+design,inlinewiththeprinciplesofresponsibledisclosure.
+• BenignPayloads: Allexamplesofadversarialpromptsormaliciouspayloadsdescribedinthispaperare
+for illustrative and evaluation purposes only. They are designed to be conceptually representative of real
+threatswithoutcontainingactuallyharmful,dangerous,orillegalcontent.
+• User Notice and Governance for Soft-Lock: The ”Soft-Lock” or graceful degradation response mech-
+anism presents an ethical challenge as it involves a level of deception towards the user. A User Notice
+Policymustbeestablishedtogovernitsuse. Thispolicyshoulddefine:
+– Transparency: The system’s terms of use should clearly state that interactions may be monitored for
+securitypurposesandthattheservicemaybegracefullydegradedifmaliciousintentisdetected.
+– Audit and Appeal: All Soft-Lock activations must be recorded in the immutable audit log. A clear
+processmustbeavailableforuserstoappealarestrictioniftheybelieveitwasappliedinerror(afalse
+positive),triggeringahuman-in-the-loopreview.
+– Proportionality: ThedurationofaSoft-Lockshouldbeproportionatetothedetectedrisk,withpolicies
+forautomaticexpirationandreviewtomitigatetheimpactoffalsepositives.
+• Compliance for Multimodal Analysis: The analysis of user-uploaded content in the Multimodal Sand-
+box,particularlyinvolvingpHashdatabasesorfacialrecognition,mustbeconductedinstrictcompliance
+with legal and ethical standards. This includes a clear legal basis for processing, adherence to jurisdic-
+tionalregulations(e.g.,GDPR),minimaldataretentionpoliciesforsensitivecontent,andahumanreview
+process for handling ambiguous cases or false positives. The system should perform classification and
+recognition,notbiometricidentification,unlessadocumentedlegalbasisisprovided.
+Declarations and Statements
+UseofAITools: LargeLanguageModelswereutilizedasresearchassistantsduringthepreparationofthis
+manuscript. Their use included summarizing academic papers, assisting with the translation of conceptual
+notes,andprovidinggrammarandstylecorrections. Allcoreconcepts,architecturaldesigns,analyses,and
+the final written text were directed, authored, and verified by the human author. No section of this paper
+consistsofunverified,directlygeneratedoutputfromanAImodel.
+ConflictsofInterest: Theauthordeclaresnoconflictsofinterest.
+Funding: Thisresearchreceivednospecificgrantfromanyfundingagencyinthepublic,commercial,or
+not-for-profitsectors.
+29
+
+--- Page 30 ---
+DataandCodeAvailability: Thispaperdescribesaconceptualarchitecture. Nonewdatasetsweregen-
+erated.
+Acknowledgments
+The author wishes to thank the open-source community and the many researchers whose work in LLM
+security, interpretability, and alignment provided the foundation for the concepts explored in this paper.
+ThisworkisdistributedundertheCreativeCommonsAttribution4.0International(CCBY4.0)license.
+References
+[1] Fabricio Aguilera-Mart´ınez and Fernando Berzal. LLM security: Vulnerabilities, attacks, defenses,
+andcountermeasures,2025.
+[2] Andy Zou, Long Phan, Sarah Chen, Keyan Nasseri, Oliver Zhang, Angela Jiang, Mantas Mazeika,
+Ann-KathrinDombrowski,DanHendrycks,JacobSteinhardt,andAvitalOliver. Representationengi-
+neering: Atop-downapproachtoAItransparency,2023.
+[3] Simone Rossi, Andrea Mauro Michel, Raghava Rao Mukkamala, and Jason Bennett Thatcher. An
+EarlyCategorizationofPromptInjectionAttacksonLargeLanguageModels,2024.
+[4] WenruiXuandKeshabK.Parhi. Asurveyofattacksonlargelanguagemodels,2025.
+[5] Xiaogeng Liu, Zhiyuan Yu, Yizhe Zhang, Ning Zhang, and Chaowei Xiao. Automatic and Universal
+PromptInjectionAttacksagainstLargeLanguageModels,2024.
+[6] Zhengchun Shang and Wenlan Wei. Evolving security in LLMs: A study of jailbreak attacks and
+defenses,2025.
+[7] Chun Wai Chiu, Linghan Huang, Bo Li, Huaming Chen, and Kim-Kwang Raymond Choo. “Do as I
+Say,NotasIDo”: Asemi-automatedapproachforjailbreakpromptattacksagainstmultimodalLLMs,
+2025.
+[8] Hao Cheng, Erjia Xiao, Jindong Gu, Le Yang, Jinhao Duan, Jize Zhang, Jiahang Cao, Kaidi Xu, and
+Renjing Xu. Unveiling typographic deceptions: Insights into the typographic vulnerability in large
+vision-languagemodels,2024.
+[9] Dezhang Kong, Shi Lin, Zhenhua Xu, Zhebo Wang, Minghao Li, Yufeng Li, Yilun Zhang, Hujin
+Peng,ZeyangSha,YuyuanLi,ChangtingLin,XunWang,XuanLiu,NingyuZhang,ChaochaoChen,
+Muhammad Khurram Khan, and Meng Han. A Survey of LLM-Driven AI Agent Communication:
+Protocols,SecurityRisks,andDefenseCountermeasures,2025.
+[10] MilesQ.LiandBenjaminC.M.Fung. Securityconcernsforlargelanguagemodels: Asurvey,2025.
+[11] Chi Zhang, Changjia Zhu, Junjie Xiong, Xiaoran Xu, Lingyao Li, Yao Liu, and Zhuo Lu. Guardians
+andoffenders: AsurveyonharmfulcontentgenerationandsafetymitigationofLLM,2025.
+[12] Xin Chen, Yarden As, and Andreas Krause. Learning safety constraints for large language models,
+2025.
+[13] Sibo Yi, Yule Liu, Zhen Sun, Tianshuo Cong, Xinlei He, Jiaxing Song, Ke Xu, and Qi Li. Jailbreak
+attacksanddefensesagainstlargelanguagemodels: Asurvey,2024.
+30
+
+--- Page 31 ---
+[14] NishantBalepur, RachelRudinger, andJordanLeeBoyd-Graber. Whichofthesebestdescribesmul-
+tiplechoiceevaluationwithLLMs? a)forcedb)flawedc)fixabled)alloftheabove,2025.
+[15] JanWehner,SaharAbdelnabi,DanielTan,DavidKrueger,andMarioFritz. Taxonomy,opportunities,
+andchallengesofrepresentationengineeringforlargelanguagemodels,2025.
+[16] AlexanderMatt Turner, Lisa Thiergart, Gavin Leech, DavidUdell, JuanJ. Vazquez, Ulisse Mini, and
+MonteMacDiarmid. Steeringlanguagemodelswithactivationengineering,2023.
+[17] BruceW.Lee, InkitPadhi, KarthikeyanNatesanRamamurthy, ErikMiehling, PierreDognin, Manish
+Nagireddy,andAmitDhurandhar. Programmingrefusalwithconditionalactivationsteering,2024.
+[18] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kernion, Tom Conerly,
+EmilyChen, AndyJones, DeepGanguli, AnnaGoldie, BenMann, NelsonJoseph, SamMcCandlish,
+Kamaldeep Singh, Jared Kaplan, and Dario Amodei. Constitutional ai: Harmlessness from AI feed-
+back,2022.
+[19] Tiejin Chen, Pingzhi Li, Kaixiong Zhou, Tianlong Chen, and Hua Wei. Unveiling privacy risks in
+multi-modal large language models: Task-specific vulnerabilities and mitigation challenges. In Find-
+ingsoftheAssociationforComputationalLinguistics: ACL2025,2025.
+[20] Tingmin Wu, Shuiqiao Yang, Shigang Liu, David Nguyen, Seung Jang, and Alsharif Abuadbba.
+Threatmodeling-LLM:Automatingthreatmodelingusinglargelanguagemodelsforbankingsystem,
+2024.
+[21] YuchenYang,YimingLi,HongweiYao,BingrunYang,YilingHe,TianweiZhang,DachengTao,and
+Zhan Qin. Shadowcode: Towards (automatic) external prompt injection attack against code LLMs,
+2024.
+[22] AndyZou,ZifanWang,NicholasCarlini,MiladNasr,J.ZicoKolter,andMattFredrikson. Universal
+andtransferableadversarialattacksonalignedlanguagemodels,2023.
+[23] LiangxuanWu,ChaoWang,TianmingLiu,YanjieZhao,andHaoyuWang. Fromassistantstoadver-
+saries: ExploringthesecurityrisksofmobileLLMagents,2025.
+[24] MichaelFreenor,LaurenAlvarez,MiltonLeal,LilySmith,JoelGarrett,YelyzavetaHusieva,Madeline
+Woodruff,RyanMiller,ErichKummerfeld,RafaelMedeiros,andSanderSchulhoff. Promptoptimiza-
+tionandevaluationforLLMautomatedredteaming,2025.
+[25] Bingbing Wen, Jihan Yao, Shangbin Feng, Chenjun Xu, Yulia Tsvetkov, Bill Howe, and Lucy Lu
+Wang. Knowyourlimits: Asurveyofabstentioninlargelanguagemodels,2024.
+[26] BoshiHuangandFabioNonatodePaula. Defendllmsthroughself-consciousness,2025.
+[27] Zhifan Luo, Shuo Shao, Su Zhang, Lijing Zhou, Yuke Hu, Chenxu Zhao, Zhihao Liu, and Zhan Qin.
+Shadowinthecache: UnveilingandmitigatingprivacyrisksofKV-cacheinllminference,2025.
+[28] FrancescoPeritiandStefanoMontanelli. LexicalSemanticChangethroughLargeLanguageModels:
+aSurvey. PhDthesis,UniversityofMilan,2024.
+[29] T. Balarabe. Understanding LLM context windows, tokens, attention, and challenges. Medium blog
+post,2025. non-peer-reviewed.
+31
+
+--- Page 32 ---
+[30] YuchenYang,QichangLiu,ChristopherBrix,HuanZhang,andYinzhiCao. Certphash: Towardscer-
+tifiedperceptualhashingviarobusttraining. InProceedingsofthe34thUSENIXSecuritySymposium,
+2025.
+[31] TomOrandOmriAzencot. Unravelinghiddenrepresentations: Amulti-modallayeranalysisforbetter
+syntheticcontentforensics,2025.
+[32] Stuart Russell and Peter Norvig. Artificial Intelligence: A Modern Approach. Pearson, 4th edition,
+2020.
+[33] RichardMeyes, MelanieLu, ConstantinWaubertdePuiseau, andTobiasMeisen. Ablationstudiesin
+artificialneuralnetworks,2019.
+[34] RossJ.Anderson. SecurityEngineering: AGuidetoBuildingDependableDistributedSystems. Wiley,
+2ndedition,2008.
+32
+
+--- Page 33 ---
+Appendices
+AppendixA: ClusterPolicyArtifact
+version: 1
+default: deny
+clusters:
+READ:
+allow: [literal_lookup] # retrieval without synthesis
+deny: [code_generation, cross_source_aggregation]
+thresholds: { trust_score_min: 0.70, human_review: false }
+SYNTH:
+allow: [summarize, paraphrase]
+deny: [code_execution, system_calls]
+thresholds: { trust_score_min: 0.80, human_review: true }
+EVAL:
+allow: [static_analysis, constraint_check]
+deny: [external_write]
+thresholds: { trust_score_min: 0.75, human_review: true }
+CROSS:
+allow: [cross_source_compare]
+deny: [freeform_generation, external_post]
+thresholds: { trust_score_min: 0.85, human_review: true }
+audit:
+mode: append_only
+fields: [timestamp, user, cluster, decision, reason]
+33
+
