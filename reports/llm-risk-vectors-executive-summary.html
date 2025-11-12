@@ -1,0 +1,755 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>LLM Security Risk Vectors: Executive Summary</title>
+        <style>
+            body {
+                font-family: Calibri, Arial, sans-serif;
+                font-size: 11pt;
+                line-height: 1.4;
+                color: #000000;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+            h1 {
+                font-size: 16pt;
+                color: #1f4e78;
+                border-bottom: 3px solid #1f4e78;
+                padding-bottom: 8px;
+                margin-bottom: 15px;
+            }
+            h2 {
+                font-size: 13pt;
+                color: #1f4e78;
+                margin-top: 20px;
+                margin-bottom: 10px;
+                border-bottom: 2px solid #4472c4;
+                padding-bottom: 4px;
+            }
+            h3 {
+                font-size: 11pt;
+                color: #1f4e78;
+                margin-top: 15px;
+                margin-bottom: 8px;
+                font-weight: bold;
+            }
+            table {
+                border-collapse: collapse;
+                width: 100%;
+                margin: 10px 0 15px 0;
+                font-size: 10pt;
+            }
+            th {
+                background-color: #1f4e78;
+                color: white;
+                padding: 8px;
+                text-align: left;
+                font-weight: bold;
+                border: 1px solid #1f4e78;
+            }
+            td {
+                padding: 6px 8px;
+                border: 1px solid #cccccc;
+                vertical-align: top;
+            }
+            tr:nth-child(even) {
+                background-color: #d6dce4;
+            }
+            tr:nth-child(odd) {
+                background-color: #ffffff;
+            }
+            .header-box {
+                background-color: #d6dce4;
+                border: 2px solid #1f4e78;
+                padding: 12px;
+                margin-bottom: 15px;
+            }
+            .header-box p {
+                margin: 4px 0;
+            }
+            .key-stat {
+                background-color: #d6dce4;
+                border-left: 4px solid #1f4e78;
+                padding: 10px;
+                margin: 10px 0;
+            }
+            ul {
+                margin: 8px 0;
+                padding-left: 20px;
+            }
+            li {
+                margin: 4px 0;
+            }
+            .info-box {
+                background-color: #d6dce4;
+                border: 2px solid #4472c4;
+                padding: 10px;
+                margin: 10px 0;
+            }
+            .vector-id {
+                font-family: Consolas, "Courier New", monospace;
+                font-weight: bold;
+                color: #1f4e78;
+            }
+            strong {
+                color: #1f4e78;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>LLM Security Risk Vectors: Executive Summary</h1>
+
+        <h2>Executive Overview</h2>
+        <p>
+            A comprehensive security research paper has identified
+            <strong>41 distinct attack vectors</strong> affecting Large Language
+            Model (LLM) systems across major providers (OpenAI, Google,
+            DeepSeek). These vulnerabilities relate to how LLM systems handle
+            trust, provenance, and state management across component boundaries.
+        </p>
+
+        <div class="key-stat">
+            <strong>Key Finding:</strong> LLM architectures commonly exhibit
+            "unverified trust propagation" where components in a processing
+            pipeline implicitly trust outputs from preceding components. This
+            can allow compromises at one stage to affect downstream operations.
+        </div>
+
+        <h2>Research Findings Summary</h2>
+
+        <table>
+            <tr>
+                <th>Metric</th>
+                <th>Finding</th>
+                <th>Relevance</th>
+            </tr>
+            <tr>
+                <td>Universal Patterns</td>
+                <td>
+                    3 vectors showed &gt;95% success rate across tested models
+                </td>
+                <td>
+                    Indicates architectural patterns rather than model-specific
+                    issues
+                </td>
+            </tr>
+            <tr>
+                <td>Code/Data Structures</td>
+                <td>
+                    99-100% success rate treating data structure fields as
+                    instructions
+                </td>
+                <td>
+                    Relevant for API integrations and configuration management
+                </td>
+            </tr>
+            <tr>
+                <td>Document Processing</td>
+                <td>80-92% success via OCR-injected content</td>
+                <td>Relevant for invoice/document automation systems</td>
+            </tr>
+            <tr>
+                <td>Framing Effects</td>
+                <td>0% refusal when framed as "testing" or "educational"</td>
+                <td>
+                    Context and framing significantly affect output behavior
+                </td>
+            </tr>
+            <tr>
+                <td>Reasoning Systems</td>
+                <td>90-97% success influencing chain-of-thought reasoning</td>
+                <td>Relevant for advanced reasoning models</td>
+            </tr>
+            <tr>
+                <td>Agentic Systems</td>
+                <td>Conceptual analysis of planner/executor patterns</td>
+                <td>
+                    Relevant for autonomous workflow and code assistance tools
+                </td>
+            </tr>
+        </table>
+
+        <h2>Top 10 Risk Vectors for Enterprise Consideration</h2>
+
+        <h3>High-Impact Vectors</h3>
+
+        <table>
+            <tr>
+                <th style="width: 15%">Vector ID</th>
+                <th style="width: 25%">Risk Vector</th>
+                <th style="width: 30%">Description</th>
+                <th style="width: 30%">Affected Systems</th>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.4</span><br />Form-Induced Safety
+                    Deviation
+                </td>
+                <td>Creative/aesthetic formatting affects classification</td>
+                <td>
+                    Content wrapped in creative formats (poetry, stories) may be
+                    processed differently than plain text
+                </td>
+                <td>All LLM applications</td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.18</span><br />Embedded Triggers
+                    in Data Structures
+                </td>
+                <td>Data structure fields interpreted as instructions</td>
+                <td>
+                    Fields like <code>"on_startup_hook"</code> in JSON configs
+                    may be treated as executable directives
+                </td>
+                <td>
+                    API integrations, configuration management,
+                    infrastructure-as-code
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.8</span><br />Visual Channel
+                    Instruction via OCR
+                </td>
+                <td>OCR-extracted text lacks provenance tracking</td>
+                <td>
+                    Text extracted from images enters processing pipeline
+                    without clear origin tracking
+                </td>
+                <td>
+                    Document processing, invoice automation, multimodal chatbots
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.33</span><br />Unverified Trust
+                    Propagation
+                </td>
+                <td>Component trust without revalidation</td>
+                <td>
+                    Pipeline components implicitly trust outputs from preceding
+                    stages
+                </td>
+                <td>All LLM pipelines (architectural pattern)</td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.40</span><br />Agent Policy
+                    Reprogramming
+                </td>
+                <td>Planner output affects executor behavior</td>
+                <td>
+                    Instructions influencing planning components may affect
+                    downstream tool execution
+                </td>
+                <td>
+                    Agentic coding assistants, workflow automation, autonomous
+                    agents
+                </td>
+            </tr>
+        </table>
+
+        <h3>Additional Vectors of Note</h3>
+
+        <table>
+            <tr>
+                <th style="width: 15%">Vector ID</th>
+                <th style="width: 25%">Risk Vector</th>
+                <th style="width: 30%">Description</th>
+                <th style="width: 30%">Affected Systems</th>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.14</span><br />Hidden Context
+                    Seeding
+                </td>
+                <td>Non-executable code influences behavior</td>
+                <td>
+                    Code comments and disabled code blocks may be interpreted as
+                    contextual guidance
+                </td>
+                <td>Code assistants, code review tools, CI/CD pipelines</td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.37</span><br />Expectation
+                    Framing
+                </td>
+                <td>Role/context framing affects outputs</td>
+                <td>
+                    Framing requests as "testing" or "educational" can
+                    significantly alter response behavior
+                </td>
+                <td>
+                    Educational platforms, testing frameworks, development
+                    environments
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.38</span><br />Benign Context
+                    Camouflage
+                </td>
+                <td>Multi-turn context establishment</td>
+                <td>
+                    Requests framed as continuations of benign conversations may
+                    be treated differently
+                </td>
+                <td>Code assistants, feature development, project planning</td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.26</span><br />Chain of Thought
+                    Seeding
+                </td>
+                <td>Reasoning chain influence</td>
+                <td>
+                    Content can influence intermediate reasoning steps in
+                    advanced models
+                </td>
+                <td>Reasoning-enhanced LLMs, agent planning</td>
+            </tr>
+            <tr>
+                <td>
+                    <span class="vector-id">§8.24</span><br />Long Context
+                    Gradual Seeding
+                </td>
+                <td>Multi-turn semantic priming</td>
+                <td>
+                    Repeated concepts across many turns can gradually influence
+                    model behavior
+                </td>
+                <td>
+                    Long-running conversations, persistent chatbots, customer
+                    service bots
+                </td>
+            </tr>
+        </table>
+
+        <h2>Risk Vector Categories (All 41 Vectors)</h2>
+
+        <table>
+            <tr>
+                <th style="width: 35%">Category</th>
+                <th style="width: 10%">Count</th>
+                <th style="width: 55%">Enterprise Relevance</th>
+            </tr>
+            <tr>
+                <td><strong>Input Manipulation</strong> (Obfuscation)</td>
+                <td>7</td>
+                <td>
+                    User input channels, content filters, encoding/decoding
+                    operations
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Cross-Modal Attacks</strong> (Visual/Audio)</td>
+                <td>6</td>
+                <td>
+                    Document processing, invoice automation, multimodal
+                    interfaces
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <strong>Code &amp; Data Processing</strong> (Structural)
+                </td>
+                <td>9</td>
+                <td>
+                    Code assistants, CI/CD pipelines, API integrations,
+                    configuration management
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <strong>State &amp; Memory Exploitation</strong> (Temporal)
+                </td>
+                <td>6</td>
+                <td>Long-running sessions, cached content, RAG systems</td>
+            </tr>
+            <tr>
+                <td>
+                    <strong>Architectural Vulnerabilities</strong>
+                    (System-Level)
+                </td>
+                <td>5</td>
+                <td>
+                    Component boundaries, client-side integrations, trust
+                    propagation
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Social Engineering</strong> (Stance-Based)</td>
+                <td>6</td>
+                <td>
+                    Educational contexts, testing frameworks, development
+                    environments
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Agentic Systems</strong></td>
+                <td>2</td>
+                <td>
+                    Autonomous agents, workflow automation, code assistants with
+                    tool access
+                </td>
+            </tr>
+        </table>
+
+        <h2>Potential Control Considerations</h2>
+
+        <div class="info-box">
+            <h3 style="margin-top: 0">Foundational Controls</h3>
+            <ul>
+                <li>
+                    <strong>Provenance tracking:</strong> Tag input sources
+                    (user/OCR/API/cache/decoded) to maintain origin context
+                </li>
+                <li>
+                    <strong>Decode-execute separation:</strong> Treat decoded
+                    content as data requiring validation before action
+                </li>
+                <li>
+                    <strong>Form-independent scanning:</strong> Analyze content
+                    semantics regardless of formatting or presentation
+                </li>
+                <li>
+                    <strong>OCR handling:</strong> Apply specific validation to
+                    vision/OCR outputs with clear provenance markers
+                </li>
+                <li>
+                    <strong>Session management:</strong> Consider fresh context
+                    for sensitive operations and clear session boundaries
+                </li>
+            </ul>
+        </div>
+
+        <div class="info-box">
+            <h3 style="margin-top: 0">Architectural Controls</h3>
+            <ul>
+                <li>
+                    <strong>Component boundaries:</strong> Validate at handoff
+                    points rather than assuming trust inheritance
+                </li>
+                <li>
+                    <strong>Code processing:</strong> Consider how comments and
+                    non-executable code are handled in processing pipelines
+                </li>
+                <li>
+                    <strong>Data structure validation:</strong> Distinguish
+                    between data fields and control directives
+                </li>
+                <li>
+                    <strong>Plan validation:</strong> For agentic systems,
+                    validate tool invocations before execution
+                </li>
+                <li>
+                    <strong>Modal-specific handling:</strong> Different
+                    validation approaches for text, OCR, and other input types
+                </li>
+            </ul>
+        </div>
+
+        <div class="info-box">
+            <h3 style="margin-top: 0">Monitoring and Detection</h3>
+            <ul>
+                <li>
+                    <strong>Context monitoring:</strong> Track semantic drift in
+                    long-running conversations
+                </li>
+                <li>
+                    <strong>Framing detection:</strong> Awareness that
+                    role/context framing affects behavior
+                </li>
+                <li>
+                    <strong>Reasoning visibility:</strong> For advanced models,
+                    understanding how intermediate reasoning is influenced
+                </li>
+                <li>
+                    <strong>Testing programs:</strong> Systematic evaluation
+                    against known vector patterns
+                </li>
+                <li>
+                    <strong>Audit logging:</strong> Track trust decisions,
+                    escalations, and content transformations
+                </li>
+            </ul>
+        </div>
+
+        <h2>Business Relevance by Area</h2>
+
+        <table>
+            <tr>
+                <th style="width: 25%">Business Area</th>
+                <th style="width: 25%">Relevant Vectors</th>
+                <th style="width: 50%">Considerations</th>
+            </tr>
+            <tr>
+                <td>Supply Chain / Code Quality</td>
+                <td>§8.14, §8.18, §8.40</td>
+                <td>
+                    Code generation from comments, data structure
+                    interpretation, autonomous code modifications
+                </td>
+            </tr>
+            <tr>
+                <td>Financial Operations</td>
+                <td>§8.8, §8.38, §8.40</td>
+                <td>
+                    Document processing automation, multi-turn request handling,
+                    workflow automation
+                </td>
+            </tr>
+            <tr>
+                <td>Data Governance</td>
+                <td>§8.8, §8.18, §8.23, §8.33</td>
+                <td>
+                    Data lineage tracking, cache integrity, provenance across
+                    transformations
+                </td>
+            </tr>
+            <tr>
+                <td>Customer Experience</td>
+                <td>§8.4, §8.24, §8.37</td>
+                <td>
+                    Content formatting effects, long-term conversation handling,
+                    context framing
+                </td>
+            </tr>
+            <tr>
+                <td>Compliance</td>
+                <td>§8.23, §8.24, §8.33</td>
+                <td>
+                    Audit trail completeness, trust decision visibility, data
+                    origin tracking
+                </td>
+            </tr>
+        </table>
+
+        <h2>Vendor Discussion Points</h2>
+
+        <table>
+            <tr>
+                <th style="width: 30%">Topic</th>
+                <th style="width: 20%">Relates to Vectors</th>
+                <th style="width: 50%">Questions for Discussion</th>
+            </tr>
+            <tr>
+                <td>Provenance systems</td>
+                <td>§8.33, §8.8, §8.23</td>
+                <td>
+                    "How does your system distinguish between user input, OCR
+                    output, and cached content?"
+                </td>
+            </tr>
+            <tr>
+                <td>Content transformation</td>
+                <td>§8.1, §8.5, §8.7, §8.20</td>
+                <td>
+                    "How is decoded or transformed content validated before
+                    being acted upon?"
+                </td>
+            </tr>
+            <tr>
+                <td>Code processing</td>
+                <td>§8.14, §8.15, §8.16</td>
+                <td>
+                    "How are code comments and non-executable code blocks
+                    handled in processing?"
+                </td>
+            </tr>
+            <tr>
+                <td>Data vs. control separation</td>
+                <td>§8.17, §8.18</td>
+                <td>
+                    "How does your system distinguish data structure fields from
+                    executable directives?"
+                </td>
+            </tr>
+            <tr>
+                <td>Context effects</td>
+                <td>§8.34, §8.37, §8.38</td>
+                <td>
+                    "How does framing (educational, testing, etc.) affect output
+                    behavior and validation?"
+                </td>
+            </tr>
+            <tr>
+                <td>Agentic validation</td>
+                <td>§8.40</td>
+                <td>
+                    "For systems with tool access, what validation occurs before
+                    tool invocation?"
+                </td>
+            </tr>
+            <tr>
+                <td>Multimodal handling</td>
+                <td>§8.8, §8.10</td>
+                <td>
+                    "Are different validation approaches used for text vs. OCR
+                    vs. other input types?"
+                </td>
+            </tr>
+            <tr>
+                <td>Session management</td>
+                <td>§8.24, §8.27</td>
+                <td>
+                    "How is conversational context managed across sessions and
+                    turns?"
+                </td>
+            </tr>
+        </table>
+
+        <h2>Deployment Context Considerations</h2>
+
+        <table>
+            <tr>
+                <th style="width: 25%">Deployment Type</th>
+                <th style="width: 25%">Relevant Vectors</th>
+                <th style="width: 50%">Key Considerations</th>
+            </tr>
+            <tr>
+                <td>
+                    <strong>Code Assistants</strong><br />(GitHub Copilot,
+                    Claude Code, etc.)
+                </td>
+                <td>§8.14, §8.18, §8.33, §8.38, §8.40</td>
+                <td>
+                    Code comment handling, plan validation for autonomous
+                    actions, context boundaries
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Document Processing</strong></td>
+                <td>§8.8, §8.9, §8.10, §8.33</td>
+                <td>
+                    OCR provenance tracking, multimodal validation, origin
+                    distinction
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Customer Service Automation</strong></td>
+                <td>§8.24, §8.26, §8.27, §8.33, §8.38</td>
+                <td>
+                    Long conversation management, context sealing, turn-to-turn
+                    validation
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Knowledge Systems / RAG</strong></td>
+                <td>§8.23, §8.24, §8.33</td>
+                <td>
+                    Cache integrity, content provenance, retrieval validation
+                </td>
+            </tr>
+            <tr>
+                <td><strong>API Integrations</strong></td>
+                <td>§8.17, §8.18, §8.29, §8.33</td>
+                <td>
+                    Data structure handling, client-side integrity, component
+                    boundaries
+                </td>
+            </tr>
+        </table>
+
+        <h2>Key Research Insights</h2>
+
+        <table>
+            <tr>
+                <th style="width: 30%">Insight</th>
+                <th style="width: 70%">Description</th>
+            </tr>
+            <tr>
+                <td><strong>Capability vs. Safety</strong></td>
+                <td>
+                    Models with better understanding of obfuscated content
+                    sometimes showed higher rates of acting on that content.
+                    Safety mechanisms may not scale proportionally with
+                    capabilities.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Format Effects</strong></td>
+                <td>
+                    Content presentation format (poetry, creative writing, etc.)
+                    can significantly affect how content is classified and
+                    processed.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Architectural Patterns</strong></td>
+                <td>
+                    Trust propagation between components is a common
+                    architectural pattern. Component outputs are often
+                    implicitly trusted by downstream stages.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>State Accumulation</strong></td>
+                <td>
+                    Multi-turn interactions and long-context windows can
+                    accumulate state in ways that affect later processing.
+                    Context boundaries are important.
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Modality Differences</strong></td>
+                <td>
+                    Different input types (text, OCR, audio transcription) may
+                    benefit from different validation approaches rather than
+                    uniform handling.
+                </td>
+            </tr>
+        </table>
+
+        <h2>Additional Resources</h2>
+
+        <p><strong>Full Analysis Documents:</strong></p>
+        <ul>
+            <li>
+                Comprehensive Risk Vectors Matrix:
+                <code>./reports/risk-vectors-matrix.md</code>
+            </li>
+            <li>
+                Detailed Paper Analysis:
+                <code>./analysis/unvalidated-trust-analysis.md</code>
+            </li>
+            <li>
+                Countermind Defense Framework:
+                <code>./analysis/countermind-analysis.md</code>
+            </li>
+        </ul>
+
+        <p><strong>Source Paper:</strong></p>
+        <ul>
+            <li>
+                Schwarz, D. (2025).
+                <em
+                    >Unvalidated Trust: Cross-Stage Vulnerabilities in Large
+                    Language Model Architectures.</em
+                >
+                arXiv:2510.27190
+            </li>
+        </ul>
+
+        <p>
+            <strong>Models Evaluated in Research:</strong>
+            deepseek-v3.2-exp-chat, gemini-2.0-flash, gpt-4o, Phi-3-mini
+        </p>
+        <p>
+            <strong>Evaluation Period:</strong> August 20 - September 10, 2025
+        </p>
+
+        <hr style="border: 1px solid #1f4e78; margin: 20px 0" />
+
+        <p style="font-size: 9pt; color: #666666">
+            <strong>Version:</strong> 1.0 | <strong>Date:</strong> November 12,
+            2025<br />
+            <strong>Purpose:</strong> Information and awareness summary of
+            academic security research
+        </p>
+    </body>
+</html>
